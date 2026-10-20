@@ -12,7 +12,7 @@
   const els = {
     soldierCount: $('soldierCount'), soldierList: $('soldierList'), startDate: $('startDate'), nightCount: $('nightCount'),
     fireStart: $('fireStart'), fireEnd: $('fireEnd'), fireDuration: $('fireDuration'),
-    patrolEnabled: $('patrolEnabled'), patrolStart: $('patrolStart'), patrolEnd: $('patrolEnd'), patrolDuration: $('patrolDuration'), patrolFields: $('patrolFields'),
+    patrolEnabled: $('patrolEnabled'), patrolStart: $('patrolStart'), patrolEnd: $('patrolEnd'), patrolDuration: $('patrolDuration'), patrolFields: $('patrolFields'), patrolMode: $('patrolMode'), patrolPeople: $('patrolPeople'),
     guardEnabled: $('guardEnabled'), guardStart: $('guardStart'), guardEnd: $('guardEnd'), guardDuration: $('guardDuration'), guardFields: $('guardFields'),
     allowPcFire: $('allowPcFire'), allowPcPatrol: $('allowPcPatrol'), allowStfFire: $('allowStfFire'), allowStfPatrol: $('allowStfPatrol'),
     tentMap: $('tentMap'), generateButton: $('generateButton'), generateMessage: $('generateMessage'), resetButton: $('resetButton'),
@@ -41,7 +41,7 @@
       settings: {
         startDate: todayLocal(), nightCount: 3,
         fireStart: '22:00', fireEnd: '06:00', fireDuration: 60,
-        patrolEnabled: true, patrolStart: '22:00', patrolEnd: '06:00', patrolDuration: 60,
+        patrolEnabled: true, patrolStart: '22:00', patrolEnd: '06:00', patrolDuration: 60, patrolMode: 'linked', patrolPeople: 2,
         guardEnabled: false, guardStart: '22:00', guardEnd: '06:00', guardDuration: 60,
         allowPcFire: false, allowPcPatrol: false, allowStfFire: false, allowStfPatrol: false
       },
@@ -55,6 +55,8 @@
       const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
       if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.soldiers)) return null;
       parsed.settings ||= {};
+      if (!['linked','independent'].includes(parsed.settings.patrolMode)) parsed.settings.patrolMode='linked';
+      if (![1,2].includes(Number(parsed.settings.patrolPeople))) parsed.settings.patrolPeople=2;
       for (const [role, oldKey] of [['Pc','allowPcDuties'], ['Stf','allowStfDuties']]) {
         for (const key of [`allow${role}Fire`, `allow${role}Patrol`]) {
           if (typeof parsed.settings[key] !== 'boolean') parsed.settings[key] = !!parsed.settings[oldKey];
@@ -80,6 +82,7 @@
     els.startDate.value = s.startDate || todayLocal();
     els.nightCount.value = String(s.nightCount || 1);
     els.fireStart.value = s.fireStart; els.fireEnd.value = s.fireEnd; els.fireDuration.value = String(s.fireDuration);
+    els.patrolMode.value=s.patrolMode || 'linked'; els.patrolPeople.value=String(s.patrolPeople || 2);
     els.patrolEnabled.checked = !!s.patrolEnabled; els.patrolStart.value = s.patrolStart; els.patrolEnd.value = s.patrolEnd; els.patrolDuration.value = String(s.patrolDuration);
     els.guardEnabled.checked = !!s.guardEnabled; els.guardStart.value = s.guardStart; els.guardEnd.value = s.guardEnd; els.guardDuration.value = String(s.guardDuration);
     for (const key of ['allowPcFire', 'allowPcPatrol', 'allowStfFire', 'allowStfPatrol']) els[key].checked = !!s[key];
@@ -90,6 +93,7 @@
     state.settings = {
       startDate: els.startDate.value || todayLocal(), nightCount: Number(els.nightCount.value),
       fireStart: els.fireStart.value, fireEnd: els.fireEnd.value, fireDuration: Number(els.fireDuration.value),
+      patrolMode: els.patrolMode.value, patrolPeople: Number(els.patrolPeople.value),
       patrolEnabled: els.patrolEnabled.checked, patrolStart: els.patrolStart.value, patrolEnd: els.patrolEnd.value, patrolDuration: Number(els.patrolDuration.value),
       guardEnabled: els.guardEnabled.checked, guardStart: els.guardStart.value, guardEnd: els.guardEnd.value, guardDuration: Number(els.guardDuration.value),
       allowPcFire: els.allowPcFire.checked, allowPcPatrol: els.allowPcPatrol.checked,
@@ -325,7 +329,7 @@
     if (!s.fireStart || !s.fireEnd) errors.push('Ange start- och sluttid för eldpost.');
     const eligible = state.soldiers.filter(canTakeFire);
     if (eligible.length < 1) errors.push('Minst en person måste kunna sitta eldpost.');
-    if (s.patrolEnabled && state.soldiers.filter(canTakePatrol).length < 2) errors.push('Minst två personer måste kunna gå patrull.');
+    if (s.patrolEnabled && state.soldiers.filter(canTakePatrol).length < s.patrolPeople) errors.push('För få personer är tillgängliga för patrull.');
     if (state.soldiers.some(p => !normalizeName(p.name))) errors.push('Fyll i namn för alla valda sovplatser.');
     const names = state.soldiers.map(p => (p.name || '').trim()).filter(Boolean);
     if (new Set(names.map(normalizeName)).size !== names.length) errors.push('Två personer har samma namn. Gör namnen unika.');
@@ -371,33 +375,46 @@
       };
 
       const fireSlots = makeSlots(fireWindow, s.fireDuration, 'fire');
+      const patrolSlots = patrolWindow ? makeSlots(patrolWindow, s.patrolDuration, 'patrol') : [];
+      const patrolUsed = new Set();
+      const selectPerson = (pool, proposed, filter = () => true) => {
+        const args = [pool, assignmentsByPerson, () => proposed, bounds,
+          historyMinutes, nightIndex, filter, historyRest, trial, shortRestCounts];
+        return chooseCandidate(...args) || chooseCandidate(...args, true);
+      };
       for (const slot of fireSlots) {
-        const patrolFollows = !!(patrolWindow && slot.end >= patrolWindow.start && slot.end + s.patrolDuration <= patrolWindow.end);
-        const fireCandidateArgs = [
-          fireEligible, assignmentsByPerson,
-          () => [slot, patrolFollows ? { type: 'patrol', start: slot.end, end: slot.end + s.patrolDuration, linked: true } : null],
-          bounds, historyMinutes, nightIndex,
-          person => !patrolFollows || canTakePatrol(person), historyRest, trial, shortRestCounts
-        ];
-        const pick = chooseCandidate(...fireCandidateArgs) || chooseCandidate(...fireCandidateArgs, true);
+        const linkedSlotIndex = s.patrolMode === 'linked'
+          ? patrolSlots.findIndex((p,i) => !patrolUsed.has(i) && p.start === slot.end) : -1;
+        const patrol = linkedSlotIndex >= 0 ? patrolSlots[linkedSlotIndex] : null;
+        const pick = selectPerson(fireEligible,
+          [slot, patrol && { ...patrol, linked: true }].filter(Boolean),
+          p => !patrol || canTakePatrol(p));
         if (!pick) { warnings.push(`Ingen möjlig eldpost ${formatRange(slot.start, slot.end)} utan att bryta vila eller överlapp.`); continue; }
         addInterval(pick.person, slot);
-        if (patrolFollows) {
-          const patrol = { type: 'patrol', start: slot.end, end: slot.end + s.patrolDuration, linked: true, outgoing: true, pairId: `${nightIndex}-${slot.end}` };
-          addInterval(pick.person, patrol);
-          const buddyArgs = [
-            patrolEligible, assignmentsByPerson,
-            () => [{ type: 'patrol', start: patrol.start, end: patrol.end, linked: true, buddy: true, pairId: patrol.pairId }],
-            bounds, historyMinutes, nightIndex,
-            p => p.id !== pick.person.id, historyRest, trial, shortRestCounts
-          ];
-          const buddyPick = chooseCandidate(...buddyArgs) || chooseCandidate(...buddyArgs, true);
-          if (buddyPick) addInterval(buddyPick.person, { type: 'patrol', start: patrol.start, end: patrol.end, linked: true, buddy: true, pairId: patrol.pairId });
-          else warnings.push(`Ingen ledig patrullkamrat ${formatRange(patrol.start, patrol.end)}.`);
+        if (patrol) {
+          const pairId = `${nightIndex}-${patrol.start}`;
+          addInterval(pick.person, { ...patrol, linked: true, outgoing: true, pairId });
+          patrolUsed.add(linkedSlotIndex);
+          if (s.patrolPeople === 2) {
+            const buddy = selectPerson(patrolEligible,[{...patrol, linked: true, buddy: true, pairId}],p=>p.id!==pick.person.id);
+            if (buddy) addInterval(buddy.person,{...patrol, linked: true, buddy: true, pairId});
+            else warnings.push(`Ingen ledig patrullkamrat ${formatRange(patrol.start, patrol.end)}.`);
+          }
+        }
+      }
+      for(let i=0;i<patrolSlots.length;i++){
+        if(patrolUsed.has(i))continue;
+        const patrol=patrolSlots[i], pairId=`${nightIndex}-${patrol.start}`;
+        let firstId=null;
+        for(let k=0;k<s.patrolPeople;k++){
+          const pick=selectPerson(patrolEligible,[{...patrol,linked:false,pairId}],p=>p.id!==firstId);
+          if(!pick){warnings.push(`Ingen tillgänglig patrull ${formatRange(patrol.start,patrol.end)} (person ${k+1}).`);break;}
+          firstId ||= pick.person.id;
+          addInterval(pick.person,{...patrol,linked:false,buddy:k===1,pairId});
         }
       }
 
-      if (guardWindow) {
+            if (guardWindow) {
         const guardSlots = makeSlots(guardWindow, s.guardDuration, 'guard');
         for (const slot of guardSlots) {
           const guardArgs = [guardEligible, assignmentsByPerson, () => [slot], bounds, historyMinutes, nightIndex, () => true, historyRest, trial, shortRestCounts];
@@ -598,7 +615,7 @@
 
   function bindEvents() {
     els.soldierCount.addEventListener('change', () => resizeSoldierList(Number(els.soldierCount.value)));
-    [els.startDate, els.nightCount, els.fireStart, els.fireEnd, els.fireDuration, els.patrolStart, els.patrolEnd, els.patrolDuration, els.guardStart, els.guardEnd, els.guardDuration].forEach(el => el.addEventListener('change', () => { readSettingsFromControls(); els.resultSection.classList.add('hidden'); }));
+    [els.startDate, els.nightCount, els.fireStart, els.fireEnd, els.fireDuration, els.patrolStart, els.patrolEnd, els.patrolDuration, els.patrolMode, els.patrolPeople, els.guardStart, els.guardEnd, els.guardDuration].forEach(el => el.addEventListener('change', () => { readSettingsFromControls(); els.resultSection.classList.add('hidden'); }));
     [els.patrolEnabled, els.guardEnabled, els.allowPcFire, els.allowPcPatrol, els.allowStfFire, els.allowStfPatrol].forEach(el => el.addEventListener('change', () => { updateOptionalFields(); readSettingsFromControls(); els.resultSection.classList.add('hidden'); }));
     els.generateButton.addEventListener('click', generatePlan);
     els.copyButton.addEventListener('click', copyCurrentNight);
