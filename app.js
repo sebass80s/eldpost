@@ -337,11 +337,10 @@
       if (combined.length > 2 || combined.filter(x=>x.type==='fire').length > 1 ||
           combined.filter(x=>x.type==='patrol').length > 1 ||
           combined.filter(x=>x.type==='guard').length > 1) continue;
-      // Två tjänster måste ligga kant i kant: inget avbrott för sömn emellan.
-      if (combined.length === 2) {
-        const ordered = [...combined].sort((a,b)=>a.start-b.start);
-        if (ordered[0].end !== ordered[1].start) continue;
-      }
+      // Avbruten sömn tillåts endast som sista utväg när vaktpost är aktiv.
+      const ordered = [...combined].sort((a,b)=>a.start-b.start);
+      const interrupted = ordered.length === 2 && ordered[0].end !== ordered[1].start;
+      if (interrupted && (!state.settings.guardEnabled || !allowShortRest)) continue;
       if (proposed.some(p => existing.some(e => overlaps(p, e)))) continue;
       const all = [...existing, ...proposed];
       const longest = maxRestGap(bounds, all);
@@ -352,12 +351,13 @@
       const burden = bounds.end - bounds.start - longest;
       const tie = ((idx * 71 + trial * 137 + nightIndex * 103) % 101) / 101;
       const shortRestPenalty = longest < REST_TARGET_MINUTES ? 100000 + (shortRestCounts.get(person.id) || 0) * 1000000 + (REST_TARGET_MINUTES-longest)*300 : 0;
+      const interruptedPenalty = interrupted ? 500000 + (person.driver ? 200000 : 0) : 0;
       // Fristående patrull: prioritera den som ännu inte tjänstgjort denna natt.
       // Därefter jämnas tjänstgöringsminuter ut över samtliga nätter.
       const independent = state.settings.patrolEnabled && state.settings.patrolMode === 'independent';
       const nightlyLoad = busyMinutes(existing);
       const dutyBalancePenalty = independent ? (nightlyLoad > 0 ? 9000 + nightlyLoad * 12 : 0) + hist * 2.5 : 0;
-      const score = hist * .28 + (historyRest.get(person.id) || 0) * .45 + minutes * .22 + clusters * 20 + burden * .23 + rotation * .8 + tie * 90 + shortRestPenalty + dutyBalancePenalty;
+      const score = hist * .28 + (historyRest.get(person.id) || 0) * .45 + minutes * .22 + clusters * 20 + burden * .23 + rotation * .8 + tie * 90 + shortRestPenalty + dutyBalancePenalty + interruptedPenalty;
       if (!best || score < best.score) best = { person, proposed, score };
     }
     return best;
@@ -519,6 +519,11 @@
         score += Math.min(zero,doubled)*1000000;
       }
     }
+    const interruptedNights = nights.flatMap(n => eligible.filter(p => {
+      const slots=n.assignments.filter(a=>a.personId===p.id).sort((a,b)=>a.start-b.start);
+      return slots.length === 2 && slots[0].end !== slots[1].start;
+    }));
+    score += interruptedNights.length * 500000000;
     const underRestCounts = eligible.map(p => nights.filter(n => n.rest.some(r => r.personId === p.id && r.longestRest < REST_TARGET_MINUTES)).length);
     const extraViolations = underRestCounts.reduce((sum,count) => sum + Math.max(0,count-1),0);
     const violations = underRestCounts.reduce((sum,count)=>sum+count,0);
@@ -527,6 +532,14 @@
     if (score < bestScore) {bestScore=score;bestPlan=nights;}
     }
     const settingsCopy = typeof structuredClone === 'function' ? structuredClone(s) : JSON.parse(JSON.stringify(s));
+    for (const night of bestPlan) {
+      for (const person of eligible) {
+        const slots=night.assignments.filter(a=>a.personId===person.id).sort((a,b)=>a.start-b.start);
+        if (slots.length === 2 && slots[0].end !== slots[1].start) {
+          night.warnings.push(`${displayName(person)} har avbruten sömn mellan två pass. Undantag används eftersom vaktpost är aktiv.`);
+        }
+      }
+    }
     if (tripleDutyOverlap(s)) {
       for (const night of bestPlan) night.warnings.unshift('Eldpost, patrull och vaktpost överlappar. Upplägget är inte optimalt: kontrollera bemanning och vila extra noga.');
     }
