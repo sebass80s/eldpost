@@ -419,6 +419,78 @@
     return errors;
   }
 
+  const IMPOSSIBLE_MESSAGE = 'Det är matematiskt omöjligt att bemanna detta schema. Kontakta din chef';
+
+  function expectedDutySlots(settings, index, fireWindow, patrolWindow, guardWindow) {
+    const jobs = makeSlots(fireWindow,settings.fireDuration,'fire').map(slot=>({...slot, people:1}));
+    if (patrolWindow && dutyEnabledOnNight(settings,'patrol',index))
+      jobs.push(...makeSlots(patrolWindow,settings.patrolDuration,'patrol').map(slot=>({...slot,people:settings.patrolPeople})));
+    if (guardWindow && dutyEnabledOnNight(settings,'guard',index))
+      jobs.push(...makeSlots(guardWindow,settings.guardDuration,'guard').map(slot=>({...slot,people:settings.guardPeople})));
+    return jobs.sort((a,b)=>a.start-b.start||b.people-a.people);
+  }
+
+  function fullyStaffed(night, jobs, soldiers) {
+    for (const job of jobs) {
+      const matched=night.assignments.filter(a=>a.type===job.type&&a.start===job.start&&a.end===job.end);
+      if (matched.length!==job.people || new Set(matched.map(a=>a.personId)).size!==matched.length) return false;
+    }
+    return night.assignments.every(a=>jobs.some(j=>j.type===a.type&&j.start===a.start&&j.end===a.end)) &&
+      soldiers.filter(p=>p.driver).every(p=>maxRestGap(night.bounds,night.assignments.filter(a=>a.personId===p.id))>=DRIVER_REST_MINUTES);
+  }
+
+  // Reservlösning: samtliga tjänster måste tillsättas. Endast förarnas 6 h vila
+  // och samtidiga dubbelbokningar är absoluta. Övriga mål blir mjuka.
+  function rescueNight(jobs, bounds, soldiers, history, trial) {
+    const poolByType={fire:soldiers.filter(canTakeFire),patrol:soldiers.filter(canTakePatrol),guard:soldiers.filter(canTakeGuard)};
+    if (jobs.some(j=>poolByType[j.type].length<j.people)) return null;
+    const assigned=new Map(soldiers.map(p=>[p.id,[]]));
+    const rows=[];
+    const maxNodes=120000;
+    let visited=0;
+    const order=[...jobs].sort((a,b)=>a.start-b.start || b.people-a.people);
+    function search(pos) {
+      if(pos===order.length)return true;
+      if(++visited>maxNodes)return false;
+      const job=order[pos], people=poolByType[job.type];
+      const ranked=people.filter(p=>{
+        const existing=assigned.get(p.id);
+        if(existing.some(a=>overlaps(a,job)))return false;
+        return !p.driver || maxRestGap(bounds,[...existing,job])>=DRIVER_REST_MINUTES;
+      }).sort((a,b)=>{
+        const weight=p=>{
+          const prior=assigned.get(p.id);
+          const recent=history.get(p.id)||{bad:0,good:0,load:0};
+          const q=shiftQuality(job,bounds);
+          const rest=maxRestGap(bounds,[...prior,job]);
+          const shiftCount=prior.length;
+          return shiftCount*900 + (bounds.end-bounds.start-rest)*1.7 +
+            (q.bad?recent.bad*380:0) + (q.good?recent.good*95:0) +
+            recent.load*.15 + (p.driver ? Math.max(0,job.start-bounds.start)*2 : 0) +
+            ((soldiers.indexOf(p)*31+trial*17+pos*13)%37);
+        };
+        return weight(a)-weight(b);
+      });
+      // Välj hela patrull-/vaktparet atomärt, utan överlapp mellan partners.
+      function pick(k,from) {
+        if(k===job.people)return search(pos+1);
+        for(let idx=from;idx<ranked.length;idx++) {
+          const p=ranked[idx], row={type:job.type,start:job.start,end:job.end,
+            personId:p.id,pairId:job.type+'-'+pos,
+            externalPartner:job.type==='guard'&&job.people===1};
+          assigned.get(p.id).push(row);rows.push(row);
+          if(pick(k+1,idx+1))return true;
+          rows.pop();assigned.get(p.id).pop();
+          if(visited>maxNodes)return false;
+        }
+        return false;
+      }
+      return pick(0,0);
+    }
+    if(!search(0))return null;
+    return rows;
+  }
+
   function generatePlan() {
     readSettingsFromControls();
     const errors = validateBeforeGenerate();
@@ -519,6 +591,21 @@
         prior.good += duties.filter(d=>shiftQuality(d,bounds).good).length;
         prior.lastBad = bad > 0;
       }
+      const needed=expectedDutySlots(s,nightIndex,fireWindow,patrolWindow,guardWindow);
+      if (!fullyStaffed({assignments,bounds},needed,state.soldiers)) {
+        const history=new Map(eligible.map(p=>[p.id,{
+          bad:qualityHistory.get(p.id)?.bad||0,
+          good:qualityHistory.get(p.id)?.good||0,
+          load:historyMinutes.get(p.id)||0
+        }]));
+        const repaired=rescueNight(needed,bounds,state.soldiers,history,trial);
+        if (repaired) {
+          assignments.length=0;
+          assignments.push(...repaired);
+          for(const person of eligible) assignmentsByPerson.set(person.id,repaired.filter(a=>a.personId===person.id));
+          warnings.length=0;
+        }
+      }
       const rest = eligible.map(person => {
         const personal = assignmentsByPerson.get(person.id) || [];
         return { personId: person.id, longestRest: maxRestGap(bounds, personal), busy: busyMinutes(personal), clusters: clusterCount(personal) };
@@ -539,7 +626,8 @@
       nights.push({ nightIndex, assignments, rest, warnings, bounds });
     }
 
-    const totals = eligible.map(p=>nights.reduce((sum,n)=>{
+    if (nights.some(n=>!fullyStaffed(n,expectedDutySlots(s,n.nightIndex,fireWindow,patrolWindow,guardWindow),state.soldiers))) continue;
+        const totals = eligible.map(p=>nights.reduce((sum,n)=>{
       const r=n.rest.find(x=>x.personId===p.id);
       return sum + (r ? n.bounds.end-n.bounds.start-r.longestRest : 0);
     },0));
@@ -593,7 +681,14 @@
     score += nights.reduce((sum,n)=>sum+n.warnings.filter(w=>!w.includes('sammanhängande vila denna natt')).length*10000000,0);
     if (score < bestScore) {bestScore=score;bestPlan=nights;}
     }
-    const settingsCopy = typeof structuredClone === 'function' ? structuredClone(s) : JSON.parse(JSON.stringify(s));
+    if (!bestPlan) {
+      state.generated = null;
+      els.resultSection.classList.add('hidden');
+      els.generateMessage.textContent = IMPOSSIBLE_MESSAGE;
+      saveStateSoon();
+      return;
+    }
+        const settingsCopy = typeof structuredClone === 'function' ? structuredClone(s) : JSON.parse(JSON.stringify(s));
     if (s.guardEnabled) for (const night of bestPlan) {
       for (const person of eligible) {
         const slots=night.assignments.filter(a=>a.personId===person.id).sort((a,b)=>a.start-b.start);
