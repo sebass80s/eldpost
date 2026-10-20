@@ -139,3 +139,16 @@ test('short rest rotates rather than repeating on consecutive nights in heavy st
       assert.ok(!(short[i] && short[i-1]),'The same soldier should not get short rest on consecutive nights in this scenario');
   }
 });
+
+test('drivers may receive difficult shifts but always retain six consecutive hours of rest',()=>{
+  const st=state({size:10,nights:3,patrolPeople:1});
+  const {plan,error}=run(st);
+  assert.ok(plan,error);
+  assertSafe(plan,st);
+  const drivers=st.soldiers.filter(p=>p.driver);
+  const difficult=drivers.reduce((sum,p)=>sum+plan.nights.reduce((n,night)=>
+    n+night.assignments.filter(a=>a.personId===p.id && a.start%1440>=120 && a.start%1440<300).length,0),0);
+  assert.ok(difficult>0,'Drivers should be eligible for difficult shifts when rest allows it');
+  for(const night of plan.nights) for(const p of drivers)
+    assert.ok(night.rest.find(r=>r.personId===p.id).longestRest>=360);
+});
