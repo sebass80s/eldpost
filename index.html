@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#26372d" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Eldpost" />
+  <title>Eldpost</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <p class="eyebrow">Tältlagets nattschema</p>
+      <h1>Eldpost</h1>
+    </div>
+    <button id="resetButton" class="icon-button" type="button" aria-label="Nollställ appen">↻</button>
+  </header>
+
+  <main>
+    <section class="card intro-card">
+      <div>
+        <h2>Planera natten utan räknesticksgymnastik</h2>
+        <p>Fyll i tältlaget och tiderna. Appen försöker ge sammanhängande vila, håller förare till minst sex timmars sammanhängande vila och roterar belastningen mellan flera nätter.</p>
+      </div>
+      <div class="privacy-pill">Endast denna telefon · localStorage</div>
+    </section>
+
+    <section class="card" id="teamSection">
+      <div class="section-heading">
+        <div>
+          <p class="step">1 · Tältlaget</p>
+          <h2>Vilka sover här?</h2>
+        </div>
+        <label class="count-control">Antal
+          <select id="soldierCount" aria-label="Antal soldater"></select>
+        </label>
+      </div>
+      <p class="hint">Sovplats 1 börjar till vänster om öppningen och numreras runt tältet till höger.</p>
+      <div id="soldierList" class="soldier-list"></div>
+    </section>
+
+    <section class="card">
+      <div class="section-heading">
+        <div>
+          <p class="step">2 · Tider</p>
+          <h2>Hur ser natten ut?</h2>
+        </div>
+      </div>
+
+      <div class="form-grid two">
+        <label>Första natt
+          <input id="startDate" type="date" />
+        </label>
+        <label>Antal nätter
+          <select id="nightCount"></select>
+        </label>
+      </div>
+
+      <div class="duty-box">
+        <div class="duty-title"><span class="duty-dot fire"></span><strong>Eldpost</strong></div>
+        <div class="form-grid three">
+          <label>Från <input id="fireStart" type="time" step="900" /></label>
+          <label>Till <input id="fireEnd" type="time" step="900" /></label>
+          <label>Pass
+            <select id="fireDuration">
+              <option value="30">30 min</option><option value="60">1 h</option><option value="90">1,5 h</option><option value="120">2 h</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="duty-box">
+        <div class="duty-title">
+          <span class="duty-dot patrol"></span><strong>Patrull efter eldpost</strong>
+          <label class="switch"><input id="patrolEnabled" type="checkbox" /><span></span></label>
+        </div>
+        <p class="hint">Den som blir avlöst går patrull med en kamrat när avlösningen ligger inom patrulltiden.</p>
+        <div id="patrolFields" class="form-grid three">
+          <label>Från <input id="patrolStart" type="time" step="900" /></label>
+          <label>Till <input id="patrolEnd" type="time" step="900" /></label>
+          <label>Längd
+            <select id="patrolDuration">
+              <option value="30">30 min</option><option value="60">1 h</option><option value="90">1,5 h</option><option value="120">2 h</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="duty-box">
+        <div class="duty-title">
+          <span class="duty-dot guard"></span><strong>Vaktpost</strong>
+          <label class="switch"><input id="guardEnabled" type="checkbox" /><span></span></label>
+        </div>
+        <div id="guardFields" class="form-grid three">
+          <label>Från <input id="guardStart" type="time" step="900" /></label>
+          <label>Till <input id="guardEnd" type="time" step="900" /></label>
+          <label>Pass
+            <select id="guardDuration">
+              <option value="30">30 min</option><option value="60">1 h</option><option value="90">1,5 h</option><option value="120">2 h</option>
+            </select>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-heading">
+        <div>
+          <p class="step">3 · Sovplatser</p>
+          <h2>Tältet</h2>
+        </div>
+      </div>
+      <div id="tentMap" class="tent-wrap" aria-label="Grafisk sovplatsfördelning"></div>
+      <p class="hint centered">Ändra sovplats på en person ovan. Kartan följer med automatiskt.</p>
+    </section>
+
+    <div class="sticky-action">
+      <button id="generateButton" class="primary-button" type="button">Generera schema</button>
+      <p id="generateMessage" class="validation-message" role="status"></p>
+    </div>
+
+    <section id="resultSection" class="card result-card hidden">
+      <div class="section-heading result-heading">
+        <div>
+          <p class="step">Schema</p>
+          <h2 id="resultTitle">Natt 1</h2>
+        </div>
+        <button id="copyButton" class="secondary-button" type="button">Kopiera</button>
+      </div>
+      <div id="nightTabs" class="night-tabs"></div>
+      <div id="scheduleWarnings"></div>
+      <div id="scheduleTable" class="schedule-table"></div>
+      <h3>Vila & belastning</h3>
+      <div id="restSummary" class="rest-summary"></div>
+      <h3>Sovplatser</h3>
+      <div id="resultTentMap" class="tent-wrap compact"></div>
+    </section>
+  </main>
+
+  <template id="soldierTemplate">
+    <article class="soldier-card">
+      <div class="soldier-main">
+        <span class="place-badge"></span>
+        <input class="soldier-name" type="text" autocomplete="off" placeholder="Namn" />
+        <select class="sleep-place" aria-label="Sovplats"></select>
+      </div>
+      <div class="role-row">
+        <label><input class="role-driver" type="checkbox" /> Förare</label>
+        <label><input class="role-pc" type="checkbox" /> Plutonchef</label>
+        <label><input class="role-stf" type="checkbox" /> Stf</label>
+        <label><input class="role-excluded" type="checkbox" /> Ej schema</label>
+      </div>
+    </article>
+  </template>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>
