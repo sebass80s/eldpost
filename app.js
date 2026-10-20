@@ -312,6 +312,11 @@
       if (combined.length > 2 || combined.filter(x=>x.type==='fire').length > 1 ||
           combined.filter(x=>x.type==='patrol').length > 1 ||
           combined.filter(x=>x.type==='guard').length > 1) continue;
+      // Två tjänster måste ligga kant i kant: inget avbrott för sömn emellan.
+      if (combined.length === 2) {
+        const ordered = [...combined].sort((a,b)=>a.start-b.start);
+        if (ordered[0].end !== ordered[1].start) continue;
+      }
       if (proposed.some(p => existing.some(e => overlaps(p, e)))) continue;
       const all = [...existing, ...proposed];
       const longest = maxRestGap(bounds, all);
