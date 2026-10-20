@@ -29,7 +29,7 @@
         const rows=night.map(a=>{
           if (!Array.isArray(a)||!types[a[0]]) return '';
           const ids=Array.isArray(a[3])?a[3]:[];
-          const persons=ids.map(id=>people.get(id)).filter(Boolean).map(p=>esc(p.name)+' · plats '+esc(p.place)).join(' + ');
+          const persons=ids.map(id=>people.get(id)).filter(Boolean).map(p=>esc(p.name)+' · plats '+esc(p.place)).concat(a[4] ? ['Soldat från annat tält'] : []).join(' + ');
           return '<div class="schedule-row"><div class="schedule-time">'+clock(a[1])+'–'+clock(a[2])+'</div><div class="schedule-duty"><div class="assignment '+a[0]+'"><span class="kind">'+types[a[0]]+'</span><span>'+persons+'</span></div></div></div>';
         }).join('');
         const day=new Date(data.d+'T12:00:00');day.setDate(day.getDate()+i);
