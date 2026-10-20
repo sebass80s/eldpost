@@ -122,3 +122,11 @@ input:focus, select:focus { border-color: var(--green-2); box-shadow: 0 0 0 3px 
 
 /* M90-inspirerad splinterkamouflagebakgrund med tydliga kort ovanpå. */
 .card { background: rgba(247,244,233,.97); }
+
+.share-controls { margin: 0 0 15px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: #fffdf7; }
+.share-controls > .hint { margin: 10px 0; }
+.share-panel { margin-top: 12px; }
+.share-panel textarea { display:block; width:100%; margin:7px 0 9px; padding:10px; border:1px solid var(--line); border-radius:10px; background:#f8f6ef; font: .78rem ui-monospace,monospace; overflow-wrap:anywhere; resize:vertical; }
+.share-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.share-qr { display:grid; place-items:center; margin:15px auto 8px; max-width:330px; }
+.share-qr svg { display:block; width:min(100%, 300px); height:auto; padding:10px; background:white; border-radius:10px; }
