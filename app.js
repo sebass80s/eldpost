@@ -2,7 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'eldpost.state.v1';
-  const MIN_SOLDIERS = 4;
+  const MIN_SOLDIERS = 8;
   const MAX_SOLDIERS = 20;
   const DRIVER_REST_MINUTES = 360;
   const REST_TARGET_MINUTES = 240;
@@ -61,6 +61,11 @@
         for (const key of [`allow${role}Fire`, `allow${role}Patrol`]) {
           if (typeof parsed.settings[key] !== 'boolean') parsed.settings[key] = !!parsed.settings[oldKey];
         }
+      }
+      // Preserve existing names and roles when migrating an older 4–7-person roster.
+      while (parsed.soldiers.length < MIN_SOLDIERS) {
+        const i = parsed.soldiers.length;
+        parsed.soldiers.push(makeSoldier(i));
       }
       return parsed;
     } catch { return null; }
