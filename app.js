@@ -448,7 +448,7 @@
           const shifts=night.assignments.filter(a=>a.personId===p.id);
           const rest=maxRestGap(night.bounds,shifts);
           if(p.driver && rest<DRIVER_REST_MINUTES)return Infinity;
-          if(!p.driver && rest<REST_TARGET_MINUTES)restPenalty+=(REST_TARGET_MINUTES-rest)*300;
+          if(!p.driver && rest<REST_TARGET_MINUTES)restPenalty+=500000+(REST_TARGET_MINUTES-rest)*1800;
           if(!p.driver) {
             const bad=shifts.filter(a=>shiftQuality(a,night.bounds).bad).length;
             badCounts.set(p.id,(badCounts.get(p.id)||0)+bad);
@@ -615,7 +615,9 @@
     const guardEligible = state.soldiers.filter(canTakeGuard);
     const historyMinutes = new Map(eligible.map(p => [p.id, 0]));
     let bestPlan = null, bestScore = Infinity;
-    for (let trial = 0; trial < (targetNightCount === 1 ? 1 : 90); trial++) {
+    // Multi-night candidate search is expensive on mobile; retain broad sampling for short plans.
+    const trialLimit = targetNightCount === 1 ? 1 : targetNightCount >= 5 ? 45 : 75;
+    for (let trial = 0; trial < trialLimit; trial++) {
     const nights = [...historical];
     const historyRest = new Map(eligible.map(p => [p.id, 0]));
     const shortRestCounts = new Map(eligible.map(p => [p.id, 0]));
