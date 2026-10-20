@@ -120,7 +120,17 @@
           <span class="duty-dot guard"></span><strong>Vaktpost</strong>
           <label class="switch"><input id="guardEnabled" type="checkbox" /><span></span></label>
         </div>
-        <div id="guardFields" class="form-grid three">
+        <div id="guardFields">
+          <div class="patrol-options">
+            <label>Bemanning från tältet
+              <select id="guardPeople">
+                <option value="2">Två personer från vårt tält</option>
+                <option value="1">En person + en från annat tält</option>
+              </select>
+            </label>
+          </div>
+          <p class="hint">Vaktpost går alltid i tvåmannapar. Välj vilka tider vårt tält ska bemanna vakten.</p>
+          <div class="form-grid three">
           <label>Från <input id="guardStart" type="time" step="900" /></label>
           <label>Till <input id="guardEnd" type="time" step="900" /></label>
           <label>Pass
@@ -128,6 +138,7 @@
               <option value="30">30 min</option><option value="60">1 h</option><option value="90">1,5 h</option><option value="120">2 h</option>
             </select>
           </label>
+          </div>
         </div>
       </div>
     </section>
