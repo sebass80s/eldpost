@@ -491,8 +491,28 @@
           }
         }
       }
+      // Swap assignments as well: a fully loaded team may have no legal one-way moves.
+      for(const night of nights.slice(lockedNightCount)) {
+        const rows=night.assignments;
+        for(let i=0;i<rows.length;i++) for(let j=i+1;j<rows.length;j++) {
+          const a=rows[i],b=rows[j];
+          if(a.personId===b.personId)continue;
+          const first=byId.get(a.personId),second=byId.get(b.personId);
+          if(!first || !second || first.driver || second.driver)continue;
+          if(!allowed(first,b.type) || !allowed(second,a.type))continue;
+          const firstOther=rows.filter((x,k)=>k!==i && k!==j && x.personId===first.id);
+          const secondOther=rows.filter((x,k)=>k!==i && k!==j && x.personId===second.id);
+          if(firstOther.some(x=>overlaps(x,b)) || secondOther.some(x=>overlaps(x,a)))continue;
+          if(firstOther.filter(x=>x.type===b.type).length>=2 || secondOther.filter(x=>x.type===a.type).length>=2)continue;
+          a.personId=second.id;b.personId=first.id;
+          const value=score();
+          a.personId=first.id;b.personId=second.id;
+          if(value<current-0.001 && (!best || value<best.value))best={a,b,first,second,value};
+        }
+      }
       if(!best)break;
-      best.a.personId=best.person.id;
+      if(best.b){best.a.personId=best.second.id;best.b.personId=best.first.id;}
+      else best.a.personId=best.person.id;
       current=best.value;
     }
     for(const night of nights.slice(lockedNightCount)) {
