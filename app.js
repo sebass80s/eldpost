@@ -266,7 +266,7 @@
   function clusterCount(intervals) { return mergeIntervals(intervals).length; }
   function displayName(s) { return (s.name || '').trim() || `Plats ${s.sleepPlace}`; }
 
-  function chooseCandidate(eligible, assignmentsByPerson, proposedFactory, bounds, historyMinutes, nightIndex, extraFilter = () => true) {
+  function chooseCandidate(eligible, assignmentsByPerson, proposedFactory, bounds, historyMinutes, nightIndex, extraFilter = () => true, historyRest = new Map(), trial = 0) {
     let best = null;
     for (let idx = 0; idx < eligible.length; idx++) {
       const person = eligible[idx]; if (!extraFilter(person)) continue;
@@ -278,7 +278,9 @@
       if (person.driver && longest < DRIVER_REST_MINUTES) continue;
       const minutes = busyMinutes(all), clusters = clusterCount(all), hist = historyMinutes.get(person.id) || 0;
       const rotation = ((idx - (nightIndex * 2)) % eligible.length + eligible.length) % eligible.length;
-      const score = hist * .25 + minutes * .16 + clusters * 28 + (bounds.end - bounds.start - longest) * .08 + rotation * .12;
+      const burden = bounds.end - bounds.start - longest;
+      const tie = ((idx * 71 + trial * 137 + nightIndex * 103) % 101) / 101;
+      const score = hist * .28 + (historyRest.get(person.id) || 0) * .45 + minutes * .22 + clusters * 20 + burden * .23 + rotation * .8 + tie * 90;
       if (!best || score < best.score) best = { person, proposed, score };
     }
     return best;
@@ -318,8 +320,11 @@
     const patrolEligible = state.soldiers.filter(canTakePatrol);
     const guardEligible = state.soldiers.filter(canTakeGuard);
     const historyMinutes = new Map(eligible.map(p => [p.id, 0]));
+    let bestPlan = null, bestScore = Infinity;
+    for (let trial = 0; trial < (s.nightCount === 1 ? 1 : 90); trial++) {
     const nights = [];
-
+    const historyRest = new Map(eligible.map(p => [p.id, 0]));
+    historyMinutes.forEach((_,id) => historyMinutes.set(id,0));
     for (let nightIndex = 0; nightIndex < s.nightCount; nightIndex++) {
       const assignmentsByPerson = new Map(eligible.map(p => [p.id, []]));
       const assignments = [];
@@ -337,7 +342,7 @@
           fireEligible, assignmentsByPerson,
           () => [slot, patrolFollows ? { type: 'patrol', start: slot.end, end: slot.end + s.patrolDuration, linked: true } : null],
           bounds, historyMinutes, nightIndex,
-          person => !patrolFollows || canTakePatrol(person)
+          person => !patrolFollows || canTakePatrol(person), historyRest, trial
         );
         if (!pick) { warnings.push(`Ingen möjlig eldpost ${formatRange(slot.start, slot.end)} utan att bryta vila eller överlapp.`); continue; }
         addInterval(pick.person, slot);
@@ -348,7 +353,7 @@
             patrolEligible, assignmentsByPerson,
             () => [{ type: 'patrol', start: patrol.start, end: patrol.end, linked: true, buddy: true, pairId: patrol.pairId }],
             bounds, historyMinutes, nightIndex,
-            p => p.id !== pick.person.id
+            p => p.id !== pick.person.id, historyRest, trial
           );
           if (buddyPick) addInterval(buddyPick.person, { type: 'patrol', start: patrol.start, end: patrol.end, linked: true, buddy: true, pairId: patrol.pairId });
           else warnings.push(`Ingen ledig patrullkamrat ${formatRange(patrol.start, patrol.end)}.`);
@@ -358,7 +363,7 @@
       if (guardWindow) {
         const guardSlots = makeSlots(guardWindow, s.guardDuration, 'guard');
         for (const slot of guardSlots) {
-          const pick = chooseCandidate(guardEligible, assignmentsByPerson, () => [slot], bounds, historyMinutes, nightIndex);
+          const pick = chooseCandidate(guardEligible, assignmentsByPerson, () => [slot], bounds, historyMinutes, nightIndex, () => true, historyRest, trial);
           if (pick) addInterval(pick.person, slot);
           else warnings.push(`Ingen möjlig vaktpost ${formatRange(slot.start, slot.end)} utan att bryta vila eller överlapp.`);
         }
@@ -368,7 +373,10 @@
         const personal = assignmentsByPerson.get(person.id) || [];
         return { personId: person.id, longestRest: maxRestGap(bounds, personal), busy: busyMinutes(personal), clusters: clusterCount(personal) };
       });
-      for (const r of rest) historyMinutes.set(r.personId, (historyMinutes.get(r.personId) || 0) + r.busy);
+      for (const r of rest) {
+        historyMinutes.set(r.personId, (historyMinutes.get(r.personId) || 0) + r.busy);
+        historyRest.set(r.personId, (historyRest.get(r.personId) || 0) + bounds.end - bounds.start - r.longestRest);
+      }
 
       const driversBroken = rest.filter(r => state.soldiers.find(p => p.id === r.personId)?.driver && r.longestRest < DRIVER_REST_MINUTES);
       if (driversBroken.length) warnings.push('Minst en förare får mindre än sex timmars sammanhängande vila.');
@@ -376,7 +384,25 @@
     }
 
     const settingsCopy = typeof structuredClone === 'function' ? structuredClone(s) : JSON.parse(JSON.stringify(s));
-    state.generated = { createdAt: new Date().toISOString(), nights, settings: settingsCopy };
+    const totals = eligible.map(p=>nights.reduce((sum,n)=>{
+      const r=n.rest.find(x=>x.personId===p.id);
+      return sum + (r ? n.bounds.end-n.bounds.start-r.longestRest : 0);
+    },0));
+    const mean = totals.reduce((a,b)=>a+b,0) / Math.max(1,totals.length);
+    let score = totals.reduce((sum,t)=>sum+(t-mean)**2,0) / Math.max(1,totals.length);
+    for (const p of eligible) {
+      let last = 0;
+      for (const n of nights) {
+        const r=n.rest.find(x=>x.personId===p.id);
+        const burden = r ? n.bounds.end-n.bounds.start-r.longestRest : 0;
+        score += Math.min(last,burden)**2 * .4;
+        last = burden;
+      }
+    }
+    score += nights.reduce((sum,n)=>sum+n.warnings.length*10000000,0);
+    if (score < bestScore) {bestScore=score;bestPlan=nights;}
+    }
+    state.generated = { createdAt: new Date().toISOString(), nights: bestPlan, settings: settingsCopy };
     activeNight = 0; sharedUrl=''; els.sharePanel.classList.add('hidden'); saveStateSoon(); renderResults();
     els.resultSection.classList.remove('hidden');
     els.resultSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
