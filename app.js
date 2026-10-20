@@ -2,7 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'eldpost.state.v1';
-  const MIN_SOLDIERS = 8;
+  const MIN_SOLDIERS = 4;
   const MAX_SOLDIERS = 20;
   const DRIVER_REST_MINUTES = 360;
   const REST_TARGET_MINUTES = 240;
@@ -10,7 +10,7 @@
 
   const $ = id => document.getElementById(id);
   const els = {
-    soldierCount: $('soldierCount'), soldierList: $('soldierList'), startDate: $('startDate'), nightCount: $('nightCount'),
+    soldierCount: $('soldierCount'), soldierList: $('soldierList'), smallTeamWarning: $('smallTeamWarning'), startDate: $('startDate'), nightCount: $('nightCount'),
     fireStart: $('fireStart'), fireEnd: $('fireEnd'), fireDuration: $('fireDuration'),
     patrolEnabled: $('patrolEnabled'), patrolStart: $('patrolStart'), patrolEnd: $('patrolEnd'), patrolDuration: $('patrolDuration'), patrolFields: $('patrolFields'), patrolMode: $('patrolMode'), patrolPeople: $('patrolPeople'),
     guardEnabled: $('guardEnabled'), guardStart: $('guardStart'), guardEnd: $('guardEnd'), guardDuration: $('guardDuration'), guardFields: $('guardFields'),
@@ -62,11 +62,6 @@
           if (typeof parsed.settings[key] !== 'boolean') parsed.settings[key] = !!parsed.settings[oldKey];
         }
       }
-      // Preserve existing names and roles when migrating an older 4–7-person roster.
-      while (parsed.soldiers.length < MIN_SOLDIERS) {
-        const i = parsed.soldiers.length;
-        parsed.soldiers.push(makeSoldier(i));
-      }
       return parsed;
     } catch { return null; }
   }
@@ -84,6 +79,7 @@
   function syncControlsFromState() {
     const s = state.settings;
     els.soldierCount.value = String(state.soldiers.length);
+    updateSmallTeamWarning();
     els.startDate.value = s.startDate || todayLocal();
     els.nightCount.value = String(s.nightCount || 1);
     els.fireStart.value = s.fireStart; els.fireEnd.value = s.fireEnd; els.fireDuration.value = String(s.fireDuration);
@@ -115,6 +111,10 @@
     els.guardFields.classList.toggle('disabled-fields', !els.guardEnabled.checked);
   }
 
+  function updateSmallTeamWarning() {
+    els.smallTeamWarning.classList.toggle('hidden', state.soldiers.length >= 8);
+  }
+
   function resizeSoldierList(count) {
     count = Math.max(MIN_SOLDIERS, Math.min(MAX_SOLDIERS, count));
     const old = state.soldiers.length;
@@ -126,7 +126,7 @@
     normalizeSleepPlaces();
     state.generated = null;
     sharedUrl=''; els.sharePanel.classList.add('hidden');
-    renderSoldiers(); renderTentMaps(); saveStateSoon();
+    renderSoldiers(); renderTentMaps(); updateSmallTeamWarning(); saveStateSoon();
   }
 
   function normalizeSleepPlaces() {
