@@ -101,3 +101,16 @@ test('heavy patrol coverage never gives more than three shifts per person',()=>{
       assert.ok(shifts.filter(a=>a.type===type).length<=2,'At most two shifts of the same kind');
   }
 });
+
+test('warns when low staffing requires more than two shifts',()=>{
+  const st=state({size:10,nights:3,patrolPeople:2});
+  const {plan,error}=run(st);
+  assert.ok(plan,error);
+  assertSafe(plan,st);
+  for(const night of plan.nights){
+    const overloaded=st.soldiers.filter(p=>night.assignments.filter(a=>a.personId===p.id).length>2);
+    assert.ok(overloaded.length>0,'This scenario requires more than two shifts per person');
+    assert.ok(night.warnings.some(w=>w.includes('På grund av låg bemanning måste en del soldater ha tre pass per natt')),
+      'Must display the staffing exception warning');
+  }
+});
