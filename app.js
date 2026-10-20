@@ -476,13 +476,16 @@
       let best=null;
       for(const night of nights.slice(lockedNightCount)) {
         const rows=night.assignments;
+        const nonDriverCount=regular.length,driverCount=soldiers.filter(p=>p.driver&&!p.excluded).length;
+        const maxShifts=Math.max(3,Math.ceil((rows.length-driverCount)/Math.max(1,nonDriverCount)));
+        const typeLimit=type=>Math.max(2,Math.ceil((rows.filter(a=>a.type===type).length-soldiers.filter(p=>p.driver&&allowed(p,type)).length)/Math.max(1,regular.filter(p=>allowed(p,type)).length)));
         for(let i=0;i<rows.length;i++) {
           const a=rows[i],old=byId.get(a.personId);
           if(!old || old.driver)continue;
           for(const person of regular) {
             if(person.id===old.id || !allowed(person,a.type))continue;
             const target=rows.filter((x,j)=>j!==i && x.personId===person.id);
-            if(target.length>=3 || target.filter(x=>x.type===a.type).length>=2)continue;
+            if(target.length>=maxShifts || target.filter(x=>x.type===a.type).length>=typeLimit(a.type))continue;
             if(target.some(x=>overlaps(x,a)))continue;
             a.personId=person.id;
             const value=score();
@@ -503,7 +506,7 @@
           const firstOther=rows.filter((x,k)=>k!==i && k!==j && x.personId===first.id);
           const secondOther=rows.filter((x,k)=>k!==i && k!==j && x.personId===second.id);
           if(firstOther.some(x=>overlaps(x,b)) || secondOther.some(x=>overlaps(x,a)))continue;
-          if(firstOther.filter(x=>x.type===b.type).length>=2 || secondOther.filter(x=>x.type===a.type).length>=2)continue;
+          if(firstOther.filter(x=>x.type===b.type).length>=typeLimit(b.type) || secondOther.filter(x=>x.type===a.type).length>=typeLimit(a.type))continue;
           a.personId=second.id;b.personId=first.id;
           const value=score();
           a.personId=first.id;b.personId=second.id;
@@ -556,6 +559,16 @@
   function rescueNight(jobs, bounds, soldiers, history, trial) {
     const poolByType={fire:soldiers.filter(canTakeFire),patrol:soldiers.filter(canTakePatrol),guard:soldiers.filter(canTakeGuard)};
     if (jobs.some(j=>poolByType[j.type].length<j.people)) return null;
+    const nonDrivers=soldiers.filter(p=>!p.driver && !p.excluded).length;
+    const drivers=soldiers.filter(p=>p.driver && !p.excluded).length;
+    const totalDemand=jobs.reduce((sum,j)=>sum+j.people,0);
+    const maxShifts=Math.max(3,Math.ceil((totalDemand-drivers)/Math.max(1,nonDrivers)));
+    const maxByType=Object.fromEntries(['fire','patrol','guard'].map(type=>{
+      const pool=poolByType[type],normal=pool.filter(p=>!p.driver).length;
+      const eligibleDrivers=pool.filter(p=>p.driver).length;
+      const demand=jobs.filter(j=>j.type===type).reduce((sum,j)=>sum+j.people,0);
+      return [type,Math.max(2,Math.ceil((demand-eligibleDrivers)/Math.max(1,normal)))];
+    }));
     const assigned=new Map(soldiers.map(p=>[p.id,[]]));
     const rows=[];
     const maxNodes=120000;
@@ -573,8 +586,8 @@
         const existing=assigned.get(p.id);
         // Reservsökningen får aldrig stapla obegränsat många pass på en soldat.
         // Tre behövs i belastade nattupplägg med fler personpass än två per person.
-        if(existing.length >= 3) return false;
-        if(existing.filter(a=>a.type===job.type).length >= 2) return false;
+        if(existing.length >= maxShifts) return false;
+        if(existing.filter(a=>a.type===job.type).length >= maxByType[job.type]) return false;
         if(existing.some(a=>overlaps(a,job)))return false;
         return !p.driver || maxRestGap(bounds,[...existing,job])>=DRIVER_REST_MINUTES;
       }).sort((a,b)=>{
