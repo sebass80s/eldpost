@@ -16,6 +16,7 @@
     allowPcFire: $('allowPcFire'), allowPcPatrol: $('allowPcPatrol'), allowStfFire: $('allowStfFire'), allowStfPatrol: $('allowStfPatrol'),
     tentMap: $('tentMap'), generateButton: $('generateButton'), generateMessage: $('generateMessage'), resetButton: $('resetButton'),
     resultSection: $('resultSection'), resultTitle: $('resultTitle'), nightTabs: $('nightTabs'), scheduleWarnings: $('scheduleWarnings'), scheduleTable: $('scheduleTable'), restSummary: $('restSummary'), resultTentMap: $('resultTentMap'), copyButton: $('copyButton'),
+    shareButton: $('shareButton'), sharePanel: $('sharePanel'), shareUrl: $('shareUrl'), shareCopyButton: $('shareCopyButton'), nativeShareButton: $('nativeShareButton'), shareQr: $('shareQr'), shareQrHelp: $('shareQrHelp'), shareStatus: $('shareStatus'),
     soldierTemplate: $('soldierTemplate')
   };
 
@@ -94,6 +95,8 @@
       allowStfFire: els.allowStfFire.checked, allowStfPatrol: els.allowStfPatrol.checked
     };
     state.generated = null;
+    sharedUrl='';
+    els.sharePanel.classList.add('hidden');
     saveStateSoon();
   }
 
@@ -112,6 +115,7 @@
     }
     normalizeSleepPlaces();
     state.generated = null;
+    sharedUrl=''; els.sharePanel.classList.add('hidden');
     renderSoldiers(); renderTentMaps(); saveStateSoon();
   }
 
@@ -162,6 +166,8 @@
 
   function invalidateGenerated() {
     state.generated = null;
+    sharedUrl = '';
+    els.sharePanel.classList.add('hidden');
     els.resultSection.classList.add('hidden');
     saveStateSoon();
   }
@@ -371,7 +377,7 @@
 
     const settingsCopy = typeof structuredClone === 'function' ? structuredClone(s) : JSON.parse(JSON.stringify(s));
     state.generated = { createdAt: new Date().toISOString(), nights, settings: settingsCopy };
-    activeNight = 0; saveStateSoon(); renderResults();
+    activeNight = 0; sharedUrl=''; els.sharePanel.classList.add('hidden'); saveStateSoon(); renderResults();
     els.resultSection.classList.remove('hidden');
     els.resultSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -454,12 +460,77 @@
 
   function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch])); }
 
+
+  let sharedUrl = '';
+  async function makeShareLink() {
+    if (!state.generated?.nights?.length) return;
+    els.shareStatus.textContent = '';
+    els.shareButton.disabled = true;
+    try {
+      if (!('CompressionStream' in window)) throw Error('Din webbläsare behöver uppdateras för att skapa delningslänk.');
+      const payload = {
+        v: 1,
+        d: state.generated.settings.startDate,
+        p: state.soldiers.map((p,i)=>[i,(p.name || '').trim() || 'Plats '+p.sleepPlace,p.sleepPlace]),
+        n: state.generated.nights.map(n=>{
+          const items=n.assignments.filter(a=>a.type!=='patrol').map(a=>[a.type,a.start,a.end,[state.soldiers.findIndex(p=>p.id===a.personId)]]);
+          const pairs=new Map();
+          for(const a of n.assignments.filter(a=>a.type==='patrol')){
+            const key=a.pairId || a.start+'-'+a.end;
+            if(!pairs.has(key))pairs.set(key,['patrol',a.start,a.end,[]]);
+            pairs.get(key)[3].push(state.soldiers.findIndex(p=>p.id===a.personId));
+          }
+          return [...items,...pairs.values()].sort((a,b)=>a[1]-b[1]);
+        })
+      };
+      const source = new Blob([JSON.stringify(payload)]);
+      const compressed=await new Response(source.stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
+      const bytes=new Uint8Array(compressed);
+      let binary='';
+      for(let offset=0;offset<bytes.length;offset+=8192) binary+=String.fromCharCode(...bytes.slice(offset,offset+8192));
+      const token=btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+      sharedUrl=new URL('/share.html#s='+token, location.origin).href;
+      els.shareUrl.value=sharedUrl;
+      els.sharePanel.classList.remove('hidden');
+      els.shareQr.innerHTML='';
+      els.shareQrHelp.textContent='';
+      try {
+        if (typeof qrcode !== 'function') throw Error('QR-kodsbiblioteket saknas.');
+        const qr=qrcode(0,'L');
+        qr.addData(sharedUrl);
+        qr.make();
+        els.shareQr.innerHTML=qr.createSvgTag({cellSize:3,margin:9,scalable:true});
+        els.shareQrHelp.textContent='Skanna med iPhone-kameran för att öppna den skrivskyddade sidan.';
+      } catch {
+        els.shareQrHelp.textContent='Schemat är för stort för en läsbar QR-kod. Kopiera länken i stället.';
+      }
+    } catch(error) {
+      els.shareStatus.textContent=error.message || 'Kunde inte skapa delningslänk.';
+    } finally { els.shareButton.disabled=false; }
+  }
+  async function copyShareLink(){
+    if(!sharedUrl)return;
+    try {
+      await navigator.clipboard.writeText(sharedUrl);
+      els.shareStatus.textContent='Länken är kopierad.';
+    }catch{els.shareStatus.textContent='Markera och kopiera länken i fältet.';}
+  }
+  async function shareUsingPhone(){
+    if(!sharedUrl)return;
+    if(navigator.share){
+      try { await navigator.share({title:'Eldpost · Delat schema',url:sharedUrl}); }catch {}
+    }else {await copyShareLink();}
+  }
+
   function bindEvents() {
     els.soldierCount.addEventListener('change', () => resizeSoldierList(Number(els.soldierCount.value)));
     [els.startDate, els.nightCount, els.fireStart, els.fireEnd, els.fireDuration, els.patrolStart, els.patrolEnd, els.patrolDuration, els.guardStart, els.guardEnd, els.guardDuration].forEach(el => el.addEventListener('change', () => { readSettingsFromControls(); els.resultSection.classList.add('hidden'); }));
     [els.patrolEnabled, els.guardEnabled, els.allowPcFire, els.allowPcPatrol, els.allowStfFire, els.allowStfPatrol].forEach(el => el.addEventListener('change', () => { updateOptionalFields(); readSettingsFromControls(); els.resultSection.classList.add('hidden'); }));
     els.generateButton.addEventListener('click', generatePlan);
     els.copyButton.addEventListener('click', copyCurrentNight);
+    els.shareButton.addEventListener('click', makeShareLink);
+    els.shareCopyButton.addEventListener('click', copyShareLink);
+    els.nativeShareButton.addEventListener('click', shareUsingPhone);
     els.resetButton.addEventListener('click', () => {
       if (!confirm('Nollställa alla namn, tider och sparade scheman på den här telefonen?')) return;
       localStorage.removeItem(STORAGE_KEY); state = makeDefaultState(); activeNight = 0; syncControlsFromState(); renderSoldiers(); renderTentMaps(); els.resultSection.classList.add('hidden'); els.generateMessage.textContent = ''; saveStateSoon();
