@@ -12,8 +12,8 @@
   const els = {
     soldierCount: $('soldierCount'), soldierList: $('soldierList'), smallTeamWarning: $('smallTeamWarning'), combinedDutyWarning: $('combinedDutyWarning'), startDate: $('startDate'), nightCount: $('nightCount'),
     fireStart: $('fireStart'), fireEnd: $('fireEnd'), fireDuration: $('fireDuration'),
-    patrolEnabled: $('patrolEnabled'), patrolStart: $('patrolStart'), patrolEnd: $('patrolEnd'), patrolDuration: $('patrolDuration'), patrolFields: $('patrolFields'), patrolMode: $('patrolMode'), patrolPeople: $('patrolPeople'),
-    guardEnabled: $('guardEnabled'), guardStart: $('guardStart'), guardEnd: $('guardEnd'), guardDuration: $('guardDuration'), guardFields: $('guardFields'), guardPeople: $('guardPeople'),
+    patrolEnabled: $('patrolEnabled'), patrolStart: $('patrolStart'), patrolEnd: $('patrolEnd'), patrolDuration: $('patrolDuration'), patrolFields: $('patrolFields'), patrolNights: $('patrolNights'), patrolMode: $('patrolMode'), patrolPeople: $('patrolPeople'),
+    guardEnabled: $('guardEnabled'), guardStart: $('guardStart'), guardEnd: $('guardEnd'), guardDuration: $('guardDuration'), guardFields: $('guardFields'), guardNights: $('guardNights'), guardPeople: $('guardPeople'),
     allowPcFire: $('allowPcFire'), allowPcPatrol: $('allowPcPatrol'), allowStfFire: $('allowStfFire'), allowStfPatrol: $('allowStfPatrol'),
     tentMap: $('tentMap'), generateButton: $('generateButton'), generateMessage: $('generateMessage'), resetButton: $('resetButton'),
     resultSection: $('resultSection'), resultTitle: $('resultTitle'), nightTabs: $('nightTabs'), scheduleWarnings: $('scheduleWarnings'), scheduleTable: $('scheduleTable'), restSummary: $('restSummary'), resultTentMap: $('resultTentMap'), copyButton: $('copyButton'),
@@ -43,8 +43,8 @@
       settings: {
         startDate: todayLocal(), nightCount: 3,
         fireStart: '22:00', fireEnd: '06:00', fireDuration: 60,
-        patrolEnabled: true, patrolStart: '22:00', patrolEnd: '06:00', patrolDuration: 60, patrolMode: 'linked', patrolPeople: 2,
-        guardEnabled: false, guardStart: '22:00', guardEnd: '06:00', guardDuration: 60, guardPeople: 2,
+        patrolEnabled: true, patrolNights: null, patrolStart: '22:00', patrolEnd: '06:00', patrolDuration: 60, patrolMode: 'linked', patrolPeople: 2,
+        guardEnabled: false, guardNights: null, guardStart: '22:00', guardEnd: '06:00', guardDuration: 60, guardPeople: 2,
         allowPcFire: false, allowPcPatrol: false, allowStfFire: false, allowStfPatrol: false
       },
       soldiers: Array.from({ length: DEFAULT_COUNT }, (_, i) => makeSoldier(i)),
@@ -93,6 +93,7 @@
     for (const key of ['allowPcFire', 'allowPcPatrol', 'allowStfFire', 'allowStfPatrol']) els[key].checked = !!s[key];
     updateOptionalFields();
     updateCombinedDutyWarning();
+    renderDutyNightChoices();
   }
 
   function readSettingsFromControls() {
@@ -100,8 +101,8 @@
       startDate: els.startDate.value || todayLocal(), nightCount: Number(els.nightCount.value),
       fireStart: els.fireStart.value, fireEnd: els.fireEnd.value, fireDuration: Number(els.fireDuration.value),
       patrolMode: els.patrolMode.value, patrolPeople: Number(els.patrolPeople.value),
-      patrolEnabled: els.patrolEnabled.checked, patrolStart: els.patrolStart.value, patrolEnd: els.patrolEnd.value, patrolDuration: Number(els.patrolDuration.value),
-      guardPeople: Number(els.guardPeople.value), guardEnabled: els.guardEnabled.checked, guardStart: els.guardStart.value, guardEnd: els.guardEnd.value, guardDuration: Number(els.guardDuration.value),
+      patrolEnabled: els.patrolEnabled.checked, patrolNights: selectedDutyNights('patrol'), patrolStart: els.patrolStart.value, patrolEnd: els.patrolEnd.value, patrolDuration: Number(els.patrolDuration.value),
+      guardPeople: Number(els.guardPeople.value), guardEnabled: els.guardEnabled.checked, guardNights: selectedDutyNights('guard'), guardStart: els.guardStart.value, guardEnd: els.guardEnd.value, guardDuration: Number(els.guardDuration.value),
       allowPcFire: els.allowPcFire.checked, allowPcPatrol: els.allowPcPatrol.checked,
       allowStfFire: els.allowStfFire.checked, allowStfPatrol: els.allowStfPatrol.checked
     };
@@ -110,6 +111,31 @@
     els.sharePanel.classList.add('hidden');
     updateCombinedDutyWarning();
     saveStateSoon();
+  }
+
+  function selectedDutyNights(type) {
+    const container = type === 'patrol' ? els.patrolNights : els.guardNights;
+    return [...container.querySelectorAll('input[data-duty-night]')].filter(el=>el.checked).map(el=>Number(el.dataset.dutyNight));
+  }
+
+  function dutyEnabledOnNight(settings, type, index) {
+    if (!settings[type+'Enabled']) return false;
+    const selected = settings[type+'Nights'];
+    return !Array.isArray(selected) || selected.includes(index);
+  }
+
+  function renderDutyNightChoices() {
+    const count = Number(els.nightCount.value) || 1;
+    for (const type of ['patrol','guard']) {
+      const container = type === 'patrol' ? els.patrolNights : els.guardNights;
+      const existing = container.querySelectorAll('input[data-duty-night]');
+      const prior = existing.length
+        ? [...existing].filter(el=>el.checked).map(el=>Number(el.dataset.dutyNight))
+        : state.settings[type+'Nights'];
+      container.innerHTML = Array.from({length:count},(_,i) =>
+        `<label class="total-night-choice"><input type="checkbox" data-duty-night="${i}" ${!Array.isArray(prior)||prior.includes(i)?'checked':''}>Natt ${i+1}</label>`).join('');
+      container.querySelectorAll('input').forEach(el=>el.addEventListener('change',()=>{readSettingsFromControls();updateCombinedDutyWarning();}));
+    }
   }
 
   function updateOptionalFields() {
@@ -282,6 +308,7 @@
   function tripleDutyOverlap(settings) {
     if (!settings.patrolEnabled || !settings.guardEnabled) return false;
     const anchor = parseClock(settings.fireStart);
+    if (!Array.from({length:settings.nightCount||1},(_,i)=>i).some(i=>dutyEnabledOnNight(settings,'patrol',i)&&dutyEnabledOnNight(settings,'guard',i))) return false;
     const windows = [
       makeWindow(settings.fireStart, settings.fireEnd, anchor),
       makeWindow(settings.patrolStart, settings.patrolEnd, anchor),
@@ -430,7 +457,7 @@
       };
 
       const fireSlots = makeSlots(fireWindow, s.fireDuration, 'fire');
-      const patrolSlots = patrolWindow ? makeSlots(patrolWindow, s.patrolDuration, 'patrol') : [];
+      const patrolSlots = patrolWindow && dutyEnabledOnNight(s,'patrol',nightIndex) ? makeSlots(patrolWindow, s.patrolDuration, 'patrol') : [];
       const patrolUsed = new Set();
       const selectPerson = (pool, proposed, filter = () => true) => {
         const args = [pool, assignmentsByPerson, () => proposed, bounds,
@@ -469,7 +496,7 @@
         }
       }
 
-            if (guardWindow) {
+            if (guardWindow && dutyEnabledOnNight(s,'guard',nightIndex)) {
         const guardSlots = makeSlots(guardWindow, s.guardDuration, 'guard');
         for (const slot of guardSlots) {
           const guardArgs = [guardEligible, assignmentsByPerson, () => [slot], bounds, historyMinutes, nightIndex, () => true, historyRest, trial, shortRestCounts, false, qualityHistory];
@@ -576,7 +603,7 @@
       }
     }
     if (tripleDutyOverlap(s)) {
-      for (const night of bestPlan) night.warnings.unshift('Eldpost, patrull och vaktpost överlappar. Upplägget är inte optimalt: kontrollera bemanning och vila extra noga.');
+      for (const night of bestPlan.filter(n=>dutyEnabledOnNight(s,'patrol',n.nightIndex)&&dutyEnabledOnNight(s,'guard',n.nightIndex))) night.warnings.unshift('Eldpost, patrull och vaktpost överlappar. Upplägget är inte optimalt: kontrollera bemanning och vila extra noga.');
     }
     state.generated = { createdAt: new Date().toISOString(), nights: bestPlan, settings: settingsCopy };
     activeNight = 0; totalView = false; selectedTotalNights = null; sharedUrl=''; els.sharePanel.classList.add('hidden'); saveStateSoon(); renderResults();
@@ -783,7 +810,8 @@
 
   function bindEvents() {
     els.soldierCount.addEventListener('change', () => resizeSoldierList(Number(els.soldierCount.value)));
-    [els.startDate, els.nightCount, els.fireStart, els.fireEnd, els.fireDuration, els.patrolStart, els.patrolEnd, els.patrolDuration, els.patrolMode, els.patrolPeople, els.guardStart, els.guardEnd, els.guardDuration, els.guardPeople].forEach(el => el.addEventListener('change', () => { readSettingsFromControls(); els.resultSection.classList.add('hidden'); }));
+    els.nightCount.addEventListener('change', () => { renderDutyNightChoices(); readSettingsFromControls(); });
+    [els.startDate, els.fireStart, els.fireEnd, els.fireDuration, els.patrolStart, els.patrolEnd, els.patrolDuration, els.patrolMode, els.patrolPeople, els.guardStart, els.guardEnd, els.guardDuration, els.guardPeople].forEach(el => el.addEventListener('change', () => { readSettingsFromControls(); els.resultSection.classList.add('hidden'); }));
     [els.patrolEnabled, els.guardEnabled, els.allowPcFire, els.allowPcPatrol, els.allowStfFire, els.allowStfPatrol].forEach(el => el.addEventListener('change', () => { updateOptionalFields(); readSettingsFromControls(); els.resultSection.classList.add('hidden'); }));
     els.generateButton.addEventListener('click', generatePlan);
     els.copyButton.addEventListener('click', copyCurrentNight);
