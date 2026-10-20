@@ -442,7 +442,8 @@
     function score() {
       const badCounts=new Map(regular.map(p=>[p.id,0]));
       let repeated=0, restPenalty=0;
-      for(const night of nights) {
+      const badNights=new Map(regular.map(p=>[p.id,[]]));
+      for(const [nightIndex,night] of nights.entries()) {
         for(const p of soldiers) {
           const shifts=night.assignments.filter(a=>a.personId===p.id);
           const rest=maxRestGap(night.bounds,shifts);
@@ -451,16 +452,27 @@
           if(!p.driver) {
             const bad=shifts.filter(a=>shiftQuality(a,night.bounds).bad).length;
             badCounts.set(p.id,(badCounts.get(p.id)||0)+bad);
-            repeated+=Math.max(0,bad-1)*30000;
+            badNights.get(p.id).push(bad);
+            repeated+=Math.max(0,bad-1)*60000;
           }
         }
       }
       const values=[...badCounts.values()];
       const average=values.reduce((a,b)=>a+b,0)/Math.max(1,values.length);
-      return values.reduce((a,b)=>a+(b-average)**2,0)*100000 + repeated + restPenalty;
+      let nightBalancePenalty=0;
+      for(const daily of badNights.values()) {
+        for(let i=1;i<daily.length;i++) {
+          // Undvik skitpass under flera nätter i rad, särskilt dubbla skitpass.
+          if(daily[i] && daily[i-1]) nightBalancePenalty+=20000*Math.min(daily[i],daily[i-1]);
+        }
+        const total=daily.reduce((a,b)=>a+b,0);
+        const mean=total/Math.max(1,daily.length);
+        nightBalancePenalty+=daily.reduce((a,b)=>a+(b-mean)**2,0)*18000;
+      }
+      return values.reduce((a,b)=>a+(b-average)**2,0)*140000 + repeated + nightBalancePenalty + restPenalty;
     }
     let current=score();
-    for(let pass=0;pass<10;pass++) {
+    for(let pass=0;pass<18;pass++) {
       let best=null;
       for(const night of nights.slice(lockedNightCount)) {
         const rows=night.assignments;
