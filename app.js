@@ -435,7 +435,7 @@
     return errors;
   }
 
-  function balanceDifficultShifts(nights, soldiers) {
+  function balanceDifficultShifts(nights, soldiers, lockedNightCount = 0) {
     const regular=soldiers.filter(p=>!p.driver && !p.excluded);
     const byId=new Map(soldiers.map(p=>[p.id,p]));
     const allowed=(p,type)=>type==='fire'?canTakeFire(p):type==='patrol'?canTakePatrol(p):canTakeGuard(p);
@@ -462,7 +462,7 @@
     let current=score();
     for(let pass=0;pass<10;pass++) {
       let best=null;
-      for(const night of nights) {
+      for(const night of nights.slice(lockedNightCount)) {
         const rows=night.assignments;
         for(let i=0;i<rows.length;i++) {
           const a=rows[i],old=byId.get(a.personId);
@@ -481,7 +481,7 @@
       best.a.personId=best.person.id;
       current=best.value;
     }
-    for(const night of nights) {
+    for(const night of nights.slice(lockedNightCount)) {
       night.rest=soldiers.filter(p=>canTakeFire(p)||canTakePatrol(p)||canTakeGuard(p)).map(p=>{
         const shifts=night.assignments.filter(a=>a.personId===p.id);
         return {personId:p.id,longestRest:maxRestGap(night.bounds,shifts),
@@ -779,7 +779,7 @@
       saveStateSoon();
       return;
     }
-        balanceDifficultShifts(bestPlan,state.soldiers);
+        balanceDifficultShifts(bestPlan,state.soldiers,historical.length);
         const settingsCopy = typeof structuredClone === 'function' ? structuredClone(s) : JSON.parse(JSON.stringify(s));
     if (s.guardEnabled) for (const night of bestPlan) {
       for (const person of eligible) {
