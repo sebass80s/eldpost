@@ -13,7 +13,7 @@
     soldierCount: $('soldierCount'), soldierList: $('soldierList'), smallTeamWarning: $('smallTeamWarning'), startDate: $('startDate'), nightCount: $('nightCount'),
     fireStart: $('fireStart'), fireEnd: $('fireEnd'), fireDuration: $('fireDuration'),
     patrolEnabled: $('patrolEnabled'), patrolStart: $('patrolStart'), patrolEnd: $('patrolEnd'), patrolDuration: $('patrolDuration'), patrolFields: $('patrolFields'), patrolMode: $('patrolMode'), patrolPeople: $('patrolPeople'),
-    guardEnabled: $('guardEnabled'), guardStart: $('guardStart'), guardEnd: $('guardEnd'), guardDuration: $('guardDuration'), guardFields: $('guardFields'),
+    guardEnabled: $('guardEnabled'), guardStart: $('guardStart'), guardEnd: $('guardEnd'), guardDuration: $('guardDuration'), guardFields: $('guardFields'), guardPeople: $('guardPeople'),
     allowPcFire: $('allowPcFire'), allowPcPatrol: $('allowPcPatrol'), allowStfFire: $('allowStfFire'), allowStfPatrol: $('allowStfPatrol'),
     tentMap: $('tentMap'), generateButton: $('generateButton'), generateMessage: $('generateMessage'), resetButton: $('resetButton'),
     resultSection: $('resultSection'), resultTitle: $('resultTitle'), nightTabs: $('nightTabs'), scheduleWarnings: $('scheduleWarnings'), scheduleTable: $('scheduleTable'), restSummary: $('restSummary'), resultTentMap: $('resultTentMap'), copyButton: $('copyButton'),
@@ -42,7 +42,7 @@
         startDate: todayLocal(), nightCount: 3,
         fireStart: '22:00', fireEnd: '06:00', fireDuration: 60,
         patrolEnabled: true, patrolStart: '22:00', patrolEnd: '06:00', patrolDuration: 60, patrolMode: 'linked', patrolPeople: 2,
-        guardEnabled: false, guardStart: '22:00', guardEnd: '06:00', guardDuration: 60,
+        guardEnabled: false, guardStart: '22:00', guardEnd: '06:00', guardDuration: 60, guardPeople: 2,
         allowPcFire: false, allowPcPatrol: false, allowStfFire: false, allowStfPatrol: false
       },
       soldiers: Array.from({ length: DEFAULT_COUNT }, (_, i) => makeSoldier(i)),
@@ -55,6 +55,7 @@
       const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
       if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.soldiers)) return null;
       parsed.settings ||= {};
+      if (![1,2].includes(Number(parsed.settings.guardPeople))) parsed.settings.guardPeople=2;
       if (!['linked','independent'].includes(parsed.settings.patrolMode)) parsed.settings.patrolMode='linked';
       if (![1,2].includes(Number(parsed.settings.patrolPeople))) parsed.settings.patrolPeople=2;
       for (const [role, oldKey] of [['Pc','allowPcDuties'], ['Stf','allowStfDuties']]) {
@@ -85,6 +86,7 @@
     els.fireStart.value = s.fireStart; els.fireEnd.value = s.fireEnd; els.fireDuration.value = String(s.fireDuration);
     els.patrolMode.value=s.patrolMode || 'linked'; els.patrolPeople.value=String(s.patrolPeople || 2);
     els.patrolEnabled.checked = !!s.patrolEnabled; els.patrolStart.value = s.patrolStart; els.patrolEnd.value = s.patrolEnd; els.patrolDuration.value = String(s.patrolDuration);
+    els.guardPeople.value=String(s.guardPeople || 2);
     els.guardEnabled.checked = !!s.guardEnabled; els.guardStart.value = s.guardStart; els.guardEnd.value = s.guardEnd; els.guardDuration.value = String(s.guardDuration);
     for (const key of ['allowPcFire', 'allowPcPatrol', 'allowStfFire', 'allowStfPatrol']) els[key].checked = !!s[key];
     updateOptionalFields();
@@ -96,7 +98,7 @@
       fireStart: els.fireStart.value, fireEnd: els.fireEnd.value, fireDuration: Number(els.fireDuration.value),
       patrolMode: els.patrolMode.value, patrolPeople: Number(els.patrolPeople.value),
       patrolEnabled: els.patrolEnabled.checked, patrolStart: els.patrolStart.value, patrolEnd: els.patrolEnd.value, patrolDuration: Number(els.patrolDuration.value),
-      guardEnabled: els.guardEnabled.checked, guardStart: els.guardStart.value, guardEnd: els.guardEnd.value, guardDuration: Number(els.guardDuration.value),
+      guardPeople: Number(els.guardPeople.value), guardEnabled: els.guardEnabled.checked, guardStart: els.guardStart.value, guardEnd: els.guardEnd.value, guardDuration: Number(els.guardDuration.value),
       allowPcFire: els.allowPcFire.checked, allowPcPatrol: els.allowPcPatrol.checked,
       allowStfFire: els.allowStfFire.checked, allowStfPatrol: els.allowStfPatrol.checked
     };
@@ -438,9 +440,14 @@
         const guardSlots = makeSlots(guardWindow, s.guardDuration, 'guard');
         for (const slot of guardSlots) {
           const guardArgs = [guardEligible, assignmentsByPerson, () => [slot], bounds, historyMinutes, nightIndex, () => true, historyRest, trial, shortRestCounts];
-          const pick = chooseCandidate(...guardArgs) || chooseCandidate(...guardArgs, true);
-          if (pick) addInterval(pick.person, slot);
-          else warnings.push(`Ingen möjlig vaktpost ${formatRange(slot.start, slot.end)} utan att bryta vila eller överlapp.`);
+          const first = chooseCandidate(...guardArgs) || chooseCandidate(...guardArgs, true);
+          const secondArgs = [guardEligible, assignmentsByPerson, () => [slot], bounds, historyMinutes, nightIndex, p => p.id !== first?.person.id, historyRest, trial, shortRestCounts];
+          const second = s.guardPeople === 2 && first ? (chooseCandidate(...secondArgs) || chooseCandidate(...secondArgs, true)) : null;
+          if (first && (s.guardPeople === 1 || second)) {
+            const pairId = `guard-${nightIndex}-${slot.start}`;
+            addInterval(first.person, { ...slot, pairId, externalPartner: s.guardPeople === 1 });
+            if (second) addInterval(second.person, { ...slot, pairId });
+          } else warnings.push(`Vaktpost ${formatRange(slot.start, slot.end)} kan inte bemannas med ${s.guardPeople} från tältet.`);
         }
       }
 
@@ -543,14 +550,22 @@
   }
 
   function renderScheduleRows(night) {
-    const fireAndGuard = night.assignments.filter(a => a.type !== 'patrol').map(a => ({ start: a.start, end: a.end, type: a.type, personIds: [a.personId] }));
+    const fireAndGuard = night.assignments.filter(a => a.type === 'fire').map(a => ({ start: a.start, end: a.end, type: a.type, personIds: [a.personId] }));
+    const guardGroups = new Map();
+    for (const a of night.assignments.filter(a=>a.type==='guard')) {
+      const key = a.pairId || `${a.start}-${a.end}`;
+      if (!guardGroups.has(key)) guardGroups.set(key,{start:a.start,end:a.end,type:'guard',personIds:[],externalPartner:false});
+      const group=guardGroups.get(key);
+      group.personIds.push(a.personId);
+      group.externalPartner ||= !!a.externalPartner;
+    }
     const patrolGroups = new Map();
     for (const a of night.assignments.filter(a => a.type === 'patrol')) {
       const key = a.pairId || `${a.start}-${a.end}`;
       if (!patrolGroups.has(key)) patrolGroups.set(key, { start: a.start, end: a.end, type: 'patrol', personIds: [] });
       patrolGroups.get(key).personIds.push(a.personId);
     }
-    const items = [...fireAndGuard, ...patrolGroups.values()].sort((a,b) => a.start - b.start || dutyOrder(a.type) - dutyOrder(b.type));
+    const items = [...fireAndGuard, ...guardGroups.values(), ...patrolGroups.values()].sort((a,b) => a.start - b.start || dutyOrder(a.type) - dutyOrder(b.type));
     const byRange = new Map();
     for (const item of items) {
       const key = `${item.start}-${item.end}`; if (!byRange.has(key)) byRange.set(key, { start: item.start, end: item.end, items: [] }); byRange.get(key).items.push(item);
@@ -558,7 +573,7 @@
     return [...byRange.values()].sort((a,b) => a.start - b.start).map(row => {
       const assignments = row.items.map(item => {
         const label = item.type === 'fire' ? 'Eldpost' : item.type === 'patrol' ? 'Patrull' : 'Vaktpost';
-        const people = item.personIds.map(personWithPlace).join(' + ');
+        const people = item.personIds.map(personWithPlace).concat(item.externalPartner ? ['Soldat från annat tält'] : []).join(' + ');
         return `<div class="assignment ${item.type}"><span class="kind">${label}</span><span>${escapeHtml(people)}</span></div>`;
       }).join('');
       return `<div class="schedule-row"><div class="schedule-time">${formatRange(row.start,row.end)}</div><div class="schedule-duty">${assignments}</div></div>`;
@@ -571,7 +586,15 @@
     const night = state.generated?.nights?.[activeNight]; if (!night) return;
     const lines = [`ELDPOST · Natt ${activeNight+1} · ${formatNightDate(activeNight)}`];
     const items = [];
-    for (const a of night.assignments.filter(a => a.type !== 'patrol')) items.push({ ...a, personIds:[a.personId] });
+    for (const a of night.assignments.filter(a => a.type === 'fire')) items.push({ ...a, personIds:[a.personId] });
+    const guards = new Map();
+    for (const a of night.assignments.filter(a => a.type === 'guard')) {
+      const key = a.pairId || `${a.start}-${a.end}`;
+      if (!guards.has(key)) guards.set(key,{...a,personIds:[],externalPartner:false});
+      guards.get(key).personIds.push(a.personId);
+      guards.get(key).externalPartner ||= !!a.externalPartner;
+    }
+    items.push(...guards.values());
     const patrols = new Map();
     for (const a of night.assignments.filter(a => a.type === 'patrol')) {
       const key = a.pairId || `${a.start}-${a.end}`; if (!patrols.has(key)) patrols.set(key,{...a,personIds:[]}); patrols.get(key).personIds.push(a.personId);
@@ -579,7 +602,7 @@
     items.push(...patrols.values()); items.sort((a,b)=>a.start-b.start || dutyOrder(a.type)-dutyOrder(b.type));
     for (const item of items) {
       const label = item.type === 'fire' ? 'Eldpost' : item.type === 'patrol' ? 'Patrull' : 'Vaktpost';
-      lines.push(`${formatRange(item.start,item.end)}  ${label}: ${item.personIds.map(personWithPlace).join(' + ')}`);
+      lines.push(`${formatRange(item.start,item.end)}  ${label}: ${item.personIds.map(personWithPlace).concat(item.externalPartner ? ['Soldat från annat tält'] : []).join(' + ')}`);
     }
     navigator.clipboard?.writeText(lines.join('\n')).then(() => { els.copyButton.textContent='Kopierat'; setTimeout(()=>els.copyButton.textContent='Kopiera',1200); });
   }
@@ -650,7 +673,7 @@
 
   function bindEvents() {
     els.soldierCount.addEventListener('change', () => resizeSoldierList(Number(els.soldierCount.value)));
-    [els.startDate, els.nightCount, els.fireStart, els.fireEnd, els.fireDuration, els.patrolStart, els.patrolEnd, els.patrolDuration, els.patrolMode, els.patrolPeople, els.guardStart, els.guardEnd, els.guardDuration].forEach(el => el.addEventListener('change', () => { readSettingsFromControls(); els.resultSection.classList.add('hidden'); }));
+    [els.startDate, els.nightCount, els.fireStart, els.fireEnd, els.fireDuration, els.patrolStart, els.patrolEnd, els.patrolDuration, els.patrolMode, els.patrolPeople, els.guardStart, els.guardEnd, els.guardDuration, els.guardPeople].forEach(el => el.addEventListener('change', () => { readSettingsFromControls(); els.resultSection.classList.add('hidden'); }));
     [els.patrolEnabled, els.guardEnabled, els.allowPcFire, els.allowPcPatrol, els.allowStfFire, els.allowStfPatrol].forEach(el => el.addEventListener('change', () => { updateOptionalFields(); readSettingsFromControls(); els.resultSection.classList.add('hidden'); }));
     els.generateButton.addEventListener('click', generatePlan);
     els.copyButton.addEventListener('click', copyCurrentNight);
