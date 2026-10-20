@@ -328,7 +328,13 @@
   function clusterCount(intervals) { return mergeIntervals(intervals).length; }
   function displayName(s) { return (s.name || '').trim() || `Plats ${s.sleepPlace}`; }
 
-  function chooseCandidate(eligible, assignmentsByPerson, proposedFactory, bounds, historyMinutes, nightIndex, extraFilter = () => true, historyRest = new Map(), trial = 0, shortRestCounts = new Map(), allowShortRest = false) {
+  function shiftQuality(slot, bounds) {
+    const center = ((slot.start + slot.end) / 2 % 1440 + 1440) % 1440;
+    return { bad: center >= 120 && center < 300,
+      good: slot.start < bounds.start + 90 || slot.end > bounds.end - 90 };
+  }
+
+  function chooseCandidate(eligible, assignmentsByPerson, proposedFactory, bounds, historyMinutes, nightIndex, extraFilter = () => true, historyRest = new Map(), trial = 0, shortRestCounts = new Map(), allowShortRest = false, qualityHistory = new Map()) {
     let best = null;
     for (let idx = 0; idx < eligible.length; idx++) {
       const person = eligible[idx]; if (!extraFilter(person)) continue;
@@ -359,7 +365,13 @@
       const independent = state.settings.patrolEnabled && state.settings.patrolMode === 'independent';
       const nightlyLoad = busyMinutes(existing);
       const dutyBalancePenalty = independent ? (nightlyLoad > 0 ? 9000 + nightlyLoad * 12 : 0) + hist * 2.5 : 0;
-      const score = hist * .28 + (historyRest.get(person.id) || 0) * .45 + minutes * .22 + clusters * 20 + burden * .23 + rotation * .8 + tie * 90 + shortRestPenalty + dutyBalancePenalty + interruptedPenalty;
+      const quality = qualityHistory.get(person.id) || {bad:0,good:0,lastBad:false};
+      const bad = proposed.filter(p=>shiftQuality(p,bounds).bad).length;
+      const good = proposed.filter(p=>shiftQuality(p,bounds).good).length;
+      const lateDriver = person.driver && proposed.length ? Math.max(0,Math.min(...proposed.map(p=>p.start))-bounds.start)*.8 : 0;
+      const badPenalty = bad * (quality.bad * 650 + (quality.lastBad?1200:0) + (existing.some(p=>shiftQuality(p,bounds).bad)?850:0));
+      const goodPenalty = good * quality.good * 230;
+      const score = hist * .28 + (historyRest.get(person.id) || 0) * .45 + minutes * .22 + clusters * 20 + burden * .23 + rotation * .8 + tie * 90 + shortRestPenalty + dutyBalancePenalty + interruptedPenalty + badPenalty + goodPenalty + lateDriver;
       if (!best || score < best.score) best = { person, proposed, score };
     }
     return best;
@@ -405,6 +417,7 @@
     const nights = [];
     const historyRest = new Map(eligible.map(p => [p.id, 0]));
     const shortRestCounts = new Map(eligible.map(p => [p.id, 0]));
+    const qualityHistory = new Map(eligible.map(p=>[p.id,{bad:0,good:0,lastBad:false}]));
     historyMinutes.forEach((_,id) => historyMinutes.set(id,0));
     for (let nightIndex = 0; nightIndex < s.nightCount; nightIndex++) {
       const assignmentsByPerson = new Map(eligible.map(p => [p.id, []]));
@@ -421,7 +434,7 @@
       const patrolUsed = new Set();
       const selectPerson = (pool, proposed, filter = () => true) => {
         const args = [pool, assignmentsByPerson, () => proposed, bounds,
-          historyMinutes, nightIndex, filter, historyRest, trial, shortRestCounts];
+          historyMinutes, nightIndex, filter, historyRest, trial, shortRestCounts, false, qualityHistory];
         return chooseCandidate(...args) || chooseCandidate(...args, true);
       };
       for (const slot of fireSlots) {
@@ -459,9 +472,9 @@
             if (guardWindow) {
         const guardSlots = makeSlots(guardWindow, s.guardDuration, 'guard');
         for (const slot of guardSlots) {
-          const guardArgs = [guardEligible, assignmentsByPerson, () => [slot], bounds, historyMinutes, nightIndex, () => true, historyRest, trial, shortRestCounts];
+          const guardArgs = [guardEligible, assignmentsByPerson, () => [slot], bounds, historyMinutes, nightIndex, () => true, historyRest, trial, shortRestCounts, false, qualityHistory];
           const first = chooseCandidate(...guardArgs) || chooseCandidate(...guardArgs, true);
-          const secondArgs = [guardEligible, assignmentsByPerson, () => [slot], bounds, historyMinutes, nightIndex, p => p.id !== first?.person.id, historyRest, trial, shortRestCounts];
+          const secondArgs = [guardEligible, assignmentsByPerson, () => [slot], bounds, historyMinutes, nightIndex, p => p.id !== first?.person.id, historyRest, trial, shortRestCounts, false, qualityHistory];
           const second = s.guardPeople === 2 && first ? (chooseCandidate(...secondArgs) || chooseCandidate(...secondArgs, true)) : null;
           if (first && (s.guardPeople === 1 || second)) {
             const pairId = `guard-${nightIndex}-${slot.start}`;
@@ -471,6 +484,14 @@
         }
       }
 
+      for (const p of eligible) {
+        const prior = qualityHistory.get(p.id);
+        const duties = assignmentsByPerson.get(p.id) || [];
+        const bad = duties.filter(d=>shiftQuality(d,bounds).bad).length;
+        prior.bad += bad;
+        prior.good += duties.filter(d=>shiftQuality(d,bounds).good).length;
+        prior.lastBad = bad > 0;
+      }
       const rest = eligible.map(person => {
         const personal = assignmentsByPerson.get(person.id) || [];
         return { personId: person.id, longestRest: maxRestGap(bounds, personal), busy: busyMinutes(personal), clusters: clusterCount(personal) };
@@ -526,6 +547,18 @@
       return slots.length === 2 && slots[0].end !== slots[1].start;
     }));
     score += interruptedNights.length * 500000000;
+    const qualityTotals=eligible.map(p=>({
+      perNight:nights.map(n=>n.assignments.filter(a=>a.personId===p.id).filter(a=>shiftQuality(a,n.bounds).bad).length),
+      bad:nights.reduce((sum,n)=>sum+n.assignments.filter(a=>a.personId===p.id&&shiftQuality(a,n.bounds).bad).length,0),
+      good:nights.reduce((sum,n)=>sum+n.assignments.filter(a=>a.personId===p.id&&shiftQuality(a,n.bounds).good).length,0)
+    }));
+    for (const key of ['bad','good']) {
+      const avg=qualityTotals.reduce((sum,p)=>sum+p[key],0)/Math.max(1,qualityTotals.length);
+      score += qualityTotals.reduce((sum,p)=>sum+(p[key]-avg)**2,0)*(key==='bad'?250000:35000);
+    }
+    for (const p of qualityTotals) {
+      for(let i=1;i<p.perNight.length;i++) if(p.perNight[i]&&p.perNight[i-1]) score += 350000;
+    }
     const underRestCounts = eligible.map(p => nights.filter(n => n.rest.some(r => r.personId === p.id && r.longestRest < REST_TARGET_MINUTES)).length);
     const extraViolations = underRestCounts.reduce((sum,count) => sum + Math.max(0,count-1),0);
     const violations = underRestCounts.reduce((sum,count)=>sum+count,0);
