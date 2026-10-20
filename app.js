@@ -307,6 +307,11 @@
       const person = eligible[idx]; if (!extraFilter(person)) continue;
       const proposed = proposedFactory(person).filter(Boolean);
       const existing = assignmentsByPerson.get(person.id) || [];
+      const combined = [...existing, ...proposed];
+      // Hård gräns: högst ett pass av varje typ och högst två totalt.
+      if (combined.length > 2 || combined.filter(x=>x.type==='fire').length > 1 ||
+          combined.filter(x=>x.type==='patrol').length > 1 ||
+          combined.filter(x=>x.type==='guard').length > 1) continue;
       if (proposed.some(p => existing.some(e => overlaps(p, e)))) continue;
       const all = [...existing, ...proposed];
       const longest = maxRestGap(bounds, all);
