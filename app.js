@@ -368,9 +368,11 @@
   function displayName(s) { return (s.name || '').trim() || `Plats ${s.sleepPlace}`; }
 
   function shiftQuality(slot, bounds) {
-    const center = ((slot.start + slot.end) / 2 % 1440 + 1440) % 1440;
-    return { bad: center >= 120 && center < 300,
-      good: slot.start < bounds.start + 90 || slot.end > bounds.end - 90 };
+    // Klassificera efter passets starttid, inte mittpunkt eller sluttid.
+    const start = ((slot.start % 1440) + 1440) % 1440;
+    const bad = start >= 120 && start < 300; // 02:00, 03:00, 04:00 (entimmespass)
+    const good = slot.start === bounds.start || slot.end === bounds.end;
+    return { bad, good };
   }
 
   function chooseCandidate(eligible, assignmentsByPerson, proposedFactory, bounds, historyMinutes, nightIndex, extraFilter = () => true, historyRest = new Map(), trial = 0, shortRestCounts = new Map(), allowShortRest = false, qualityHistory = new Map()) {
