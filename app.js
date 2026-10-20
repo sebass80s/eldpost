@@ -10,7 +10,7 @@
 
   const $ = id => document.getElementById(id);
   const els = {
-    soldierCount: $('soldierCount'), soldierList: $('soldierList'), smallTeamWarning: $('smallTeamWarning'), startDate: $('startDate'), nightCount: $('nightCount'),
+    soldierCount: $('soldierCount'), soldierList: $('soldierList'), smallTeamWarning: $('smallTeamWarning'), combinedDutyWarning: $('combinedDutyWarning'), startDate: $('startDate'), nightCount: $('nightCount'),
     fireStart: $('fireStart'), fireEnd: $('fireEnd'), fireDuration: $('fireDuration'),
     patrolEnabled: $('patrolEnabled'), patrolStart: $('patrolStart'), patrolEnd: $('patrolEnd'), patrolDuration: $('patrolDuration'), patrolFields: $('patrolFields'), patrolMode: $('patrolMode'), patrolPeople: $('patrolPeople'),
     guardEnabled: $('guardEnabled'), guardStart: $('guardStart'), guardEnd: $('guardEnd'), guardDuration: $('guardDuration'), guardFields: $('guardFields'), guardPeople: $('guardPeople'),
@@ -90,6 +90,7 @@
     els.guardEnabled.checked = !!s.guardEnabled; els.guardStart.value = s.guardStart; els.guardEnd.value = s.guardEnd; els.guardDuration.value = String(s.guardDuration);
     for (const key of ['allowPcFire', 'allowPcPatrol', 'allowStfFire', 'allowStfPatrol']) els[key].checked = !!s[key];
     updateOptionalFields();
+    updateCombinedDutyWarning();
   }
 
   function readSettingsFromControls() {
@@ -105,6 +106,7 @@
     state.generated = null;
     sharedUrl='';
     els.sharePanel.classList.add('hidden');
+    updateCombinedDutyWarning();
     saveStateSoon();
   }
 
@@ -273,6 +275,22 @@
     while (start > anchor + 720) start -= 1440;
     while (end <= start) end += 1440;
     return { start, end };
+  }
+
+  function tripleDutyOverlap(settings) {
+    if (!settings.patrolEnabled || !settings.guardEnabled) return false;
+    const anchor = parseClock(settings.fireStart);
+    const windows = [
+      makeWindow(settings.fireStart, settings.fireEnd, anchor),
+      makeWindow(settings.patrolStart, settings.patrolEnd, anchor),
+      makeWindow(settings.guardStart, settings.guardEnd, anchor)
+    ];
+    return windows.every(Boolean) &&
+      Math.max(...windows.map(w => w.start)) < Math.min(...windows.map(w => w.end));
+  }
+
+  function updateCombinedDutyWarning() {
+    els.combinedDutyWarning.classList.toggle('hidden', !tripleDutyOverlap(state.settings));
   }
 
   function makeSlots(window, duration, type) {
@@ -509,6 +527,9 @@
     if (score < bestScore) {bestScore=score;bestPlan=nights;}
     }
     const settingsCopy = typeof structuredClone === 'function' ? structuredClone(s) : JSON.parse(JSON.stringify(s));
+    if (tripleDutyOverlap(s)) {
+      for (const night of bestPlan) night.warnings.unshift('Eldpost, patrull och vaktpost överlappar. Upplägget är inte optimalt: kontrollera bemanning och vila extra noga.');
+    }
     state.generated = { createdAt: new Date().toISOString(), nights: bestPlan, settings: settingsCopy };
     activeNight = 0; sharedUrl=''; els.sharePanel.classList.add('hidden'); saveStateSoon(); renderResults();
     els.resultSection.classList.remove('hidden');
