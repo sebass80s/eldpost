@@ -549,6 +549,10 @@
       if(failedStates.has(key))return false;
       const ranked=people.filter(p=>{
         const existing=assigned.get(p.id);
+        // Reservsökningen får aldrig stapla obegränsat många pass på en soldat.
+        // Tre behövs i belastade nattupplägg med fler personpass än två per person.
+        if(existing.length >= 3) return false;
+        if(existing.filter(a=>a.type===job.type).length >= 2) return false;
         if(existing.some(a=>overlaps(a,job)))return false;
         return !p.driver || maxRestGap(bounds,[...existing,job])>=DRIVER_REST_MINUTES;
       }).sort((a,b)=>{
