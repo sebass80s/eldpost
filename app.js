@@ -174,20 +174,25 @@
       const key = normalizeName(soldier.name);
       if (key) counts.set(key, (counts.get(key) || 0) + 1);
     }
-    let duplicated = false;
+    let duplicated = false, missing = false;
     for (const row of els.soldierList.querySelectorAll('.soldier-card')) {
       const soldier = state.soldiers.find(p => p.id === row.dataset.id);
       const input = row.querySelector('.soldier-name');
       const key = normalizeName(soldier?.name);
-      const isDuplicate = !!key && counts.get(key) > 1;
+      const isMissing = !key;
+      const isDuplicate = !isMissing && counts.get(key) > 1;
       input.classList.toggle('duplicate-name', isDuplicate);
-      input.setAttribute('aria-invalid', String(isDuplicate));
-      input.setCustomValidity(isDuplicate ? 'Namnet används redan på en annan sovplats.' : '');
+      input.classList.toggle('missing-name', isMissing);
+      input.setAttribute('aria-invalid', String(isDuplicate || isMissing));
+      input.setCustomValidity(isMissing ? 'Ange ett namn för sovplatsen.' : isDuplicate ? 'Namnet används redan på en annan sovplats.' : '');
       duplicated ||= isDuplicate;
+      missing ||= isMissing;
     }
-    els.generateButton.disabled = duplicated;
-    els.generateMessage.textContent = duplicated ? 'Samma namn förekommer flera gånger. Ändra de markerade namnen.' : '';
-    return !duplicated;
+    els.generateButton.disabled = duplicated || missing;
+    els.generateMessage.textContent = duplicated
+      ? 'Samma namn förekommer flera gånger. Ändra de markerade namnen.'
+      : missing ? 'Fyll i namn för alla valda sovplatser innan du genererar.' : '';
+    return !duplicated && !missing;
   }
 
   function invalidateGenerated() {
@@ -321,6 +326,7 @@
     const eligible = state.soldiers.filter(canTakeFire);
     if (eligible.length < 1) errors.push('Minst en person måste kunna sitta eldpost.');
     if (s.patrolEnabled && state.soldiers.filter(canTakePatrol).length < 2) errors.push('Minst två personer måste kunna gå patrull.');
+    if (state.soldiers.some(p => !normalizeName(p.name))) errors.push('Fyll i namn för alla valda sovplatser.');
     const names = state.soldiers.map(p => (p.name || '').trim()).filter(Boolean);
     if (new Set(names.map(normalizeName)).size !== names.length) errors.push('Två personer har samma namn. Gör namnen unika.');
     const places = state.soldiers.map(p => p.sleepPlace);
