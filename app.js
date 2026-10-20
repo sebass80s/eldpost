@@ -39,7 +39,7 @@
       version: 1,
       settings: {
         startDate: todayLocal(), nightCount: 3,
-        fireStart: '20:00', fireEnd: '06:00', fireDuration: 60,
+        fireStart: '22:00', fireEnd: '06:00', fireDuration: 60,
         patrolEnabled: true, patrolStart: '22:00', patrolEnd: '06:00', patrolDuration: 60,
         guardEnabled: false, guardStart: '22:00', guardEnd: '06:00', guardDuration: 60,
         allowPcFire: false, allowPcPatrol: false, allowStfFire: false, allowStfPatrol: false
