@@ -114,3 +114,16 @@ test('warns when low staffing requires more than two shifts',()=>{
       'Must display the staffing exception warning');
   }
 });
+
+test('normal ten-person fire and single patrol fits two-shift limit fairly',()=>{
+  const st=state({size:10,nights:3,patrolPeople:1});
+  const {plan,error}=run(st);
+  assert.ok(plan,error);
+  assertSafe(plan,st);
+  for(const night of plan.nights) for(const p of st.soldiers)
+    assert.ok(night.assignments.filter(a=>a.personId===p.id).length<=2,
+      'Ten-person standard patrol must not require a third shift');
+  const counts=st.soldiers.filter(p=>!p.driver).map(p=>plan.nights.reduce((sum,night)=>
+    sum+night.assignments.filter(a=>a.personId===p.id && a.start%1440>=120 && a.start%1440<300).length,0));
+  assert.ok(Math.max(...counts)-Math.min(...counts)<=1,'Bad shifts must be shared as equally as possible');
+});
