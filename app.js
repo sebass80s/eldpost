@@ -557,18 +557,18 @@
 
   // Reservlösning: samtliga tjänster måste tillsättas. Endast förarnas 6 h vila
   // och samtidiga dubbelbokningar är absoluta. Övriga mål blir mjuka.
-  function rescueNight(jobs, bounds, soldiers, history, trial) {
+  function rescueNight(jobs, bounds, soldiers, history, trial, strictTwo = false) {
     const poolByType={fire:soldiers.filter(canTakeFire),patrol:soldiers.filter(canTakePatrol),guard:soldiers.filter(canTakeGuard)};
     if (jobs.some(j=>poolByType[j.type].length<j.people)) return null;
     const nonDrivers=soldiers.filter(p=>!p.driver && !p.excluded).length;
     const drivers=soldiers.filter(p=>p.driver && !p.excluded).length;
     const totalDemand=jobs.reduce((sum,j)=>sum+j.people,0);
-    const maxShifts=Math.max(3,Math.ceil((totalDemand-drivers)/Math.max(1,nonDrivers)));
+    const maxShifts=strictTwo ? 2 : Math.max(3,Math.ceil((totalDemand-drivers)/Math.max(1,nonDrivers)));
     const maxByType=Object.fromEntries(['fire','patrol','guard'].map(type=>{
       const pool=poolByType[type],normal=pool.filter(p=>!p.driver).length;
       const eligibleDrivers=pool.filter(p=>p.driver).length;
       const demand=jobs.filter(j=>j.type===type).reduce((sum,j)=>sum+j.people,0);
-      return [type,Math.max(2,Math.ceil((demand-eligibleDrivers)/Math.max(1,normal)))];
+      return [type,strictTwo ? 1 : Math.max(2,Math.ceil((demand-eligibleDrivers)/Math.max(1,normal)))];
     }));
     const assigned=new Map(soldiers.map(p=>[p.id,[]]));
     const rows=[];
@@ -753,7 +753,7 @@
           good:qualityHistory.get(p.id)?.good||0,
           load:historyMinutes.get(p.id)||0
         }]));
-        const repaired=rescueNight(needed,bounds,state.soldiers,history,trial);
+        const repaired=rescueNight(needed,bounds,state.soldiers,history,trial,true) || rescueNight(needed,bounds,state.soldiers,history,trial,false);
         if (repaired) {
           assignments.length=0;
           assignments.push(...repaired);
@@ -823,8 +823,9 @@
       good:nights.reduce((sum,n)=>sum+n.assignments.filter(a=>a.personId===p.id&&shiftQuality(a,n.bounds).good).length,0)
     }));
     for (const key of ['bad','good']) {
-      const avg=qualityTotals.reduce((sum,p)=>sum+p[key],0)/Math.max(1,qualityTotals.length);
-      score += qualityTotals.reduce((sum,p)=>sum+(p[key]-avg)**2,0)*(key==='bad'?250000:35000);
+      const qualityPool=key==='bad' ? qualityTotals.filter((_,i)=>!eligible[i].driver) : qualityTotals;
+      const avg=qualityPool.reduce((sum,p)=>sum+p[key],0)/Math.max(1,qualityPool.length);
+      score += qualityPool.reduce((sum,p)=>sum+(p[key]-avg)**2,0)*(key==='bad'?250000:35000);
     }
     for (const p of qualityTotals) {
       for(let i=1;i<p.perNight.length;i++) if(p.perNight[i]&&p.perNight[i-1]) score += 350000;
