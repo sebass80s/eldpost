@@ -564,6 +564,8 @@
     const nonDrivers=soldiers.filter(p=>!p.driver && !p.excluded).length;
     const drivers=soldiers.filter(p=>p.driver && !p.excluded).length;
     const totalDemand=jobs.reduce((sum,j)=>sum+j.people,0);
+    // Skip strict search when two assignments per eligible person cannot cover demand.
+    if(strictTwo && totalDemand>soldiers.filter(p=>poolByType.fire.includes(p)||poolByType.patrol.includes(p)||poolByType.guard.includes(p)).length*2) return null;
     const maxShifts=strictTwo ? 2 : Math.max(3,Math.ceil((totalDemand-drivers)/Math.max(1,nonDrivers)));
     const maxByType=Object.fromEntries(['fire','patrol','guard'].map(type=>{
       const pool=poolByType[type],normal=pool.filter(p=>!p.driver).length;
