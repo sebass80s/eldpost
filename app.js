@@ -435,6 +435,66 @@
     return errors;
   }
 
+  function balanceDifficultShifts(nights, soldiers) {
+    const regular=soldiers.filter(p=>!p.driver && !p.excluded);
+    const byId=new Map(soldiers.map(p=>[p.id,p]));
+    const allowed=(p,type)=>type==='fire'?canTakeFire(p):type==='patrol'?canTakePatrol(p):canTakeGuard(p);
+    function score() {
+      const badCounts=new Map(regular.map(p=>[p.id,0]));
+      let repeated=0, restPenalty=0;
+      for(const night of nights) {
+        for(const p of soldiers) {
+          const shifts=night.assignments.filter(a=>a.personId===p.id);
+          const rest=maxRestGap(night.bounds,shifts);
+          if(p.driver && rest<DRIVER_REST_MINUTES)return Infinity;
+          if(!p.driver && rest<REST_TARGET_MINUTES)restPenalty+=(REST_TARGET_MINUTES-rest)*300;
+          if(!p.driver) {
+            const bad=shifts.filter(a=>shiftQuality(a,night.bounds).bad).length;
+            badCounts.set(p.id,(badCounts.get(p.id)||0)+bad);
+            repeated+=Math.max(0,bad-1)*30000;
+          }
+        }
+      }
+      const values=[...badCounts.values()];
+      const average=values.reduce((a,b)=>a+b,0)/Math.max(1,values.length);
+      return values.reduce((a,b)=>a+(b-average)**2,0)*100000 + repeated + restPenalty;
+    }
+    let current=score();
+    for(let pass=0;pass<10;pass++) {
+      let best=null;
+      for(const night of nights) {
+        const rows=night.assignments;
+        for(let i=0;i<rows.length;i++) {
+          const a=rows[i],old=byId.get(a.personId);
+          if(!old || old.driver)continue;
+          for(const person of regular) {
+            if(person.id===old.id || !allowed(person,a.type))continue;
+            if(rows.some((x,j)=>j!==i && x.personId===person.id && overlaps(x,a)))continue;
+            a.personId=person.id;
+            const value=score();
+            a.personId=old.id;
+            if(value<current-0.001 && (!best || value<best.value))best={a,person,value};
+          }
+        }
+      }
+      if(!best)break;
+      best.a.personId=best.person.id;
+      current=best.value;
+    }
+    for(const night of nights) {
+      night.rest=soldiers.filter(p=>canTakeFire(p)||canTakePatrol(p)||canTakeGuard(p)).map(p=>{
+        const shifts=night.assignments.filter(a=>a.personId===p.id);
+        return {personId:p.id,longestRest:maxRestGap(night.bounds,shifts),
+          busy:busyMinutes(shifts),clusters:clusterCount(shifts)};
+      });
+      night.warnings=night.warnings.filter(w=>!w.includes('sammanhängande vila denna natt'));
+      for(const r of night.rest.filter(r=>r.longestRest<REST_TARGET_MINUTES)) {
+        const p=byId.get(r.personId);
+        night.warnings.push(`${displayName(p)} får bara ${formatMinutes(r.longestRest)} sammanhängande vila denna natt (målet är minst 4 h).`);
+      }
+    }
+  }
+
   const IMPOSSIBLE_MESSAGE = 'Det är matematiskt omöjligt att bemanna detta schema. Kontakta din chef';
 
   function expectedDutySlots(settings, index, fireWindow, patrolWindow, guardWindow) {
@@ -719,6 +779,7 @@
       saveStateSoon();
       return;
     }
+        balanceDifficultShifts(bestPlan,state.soldiers);
         const settingsCopy = typeof structuredClone === 'function' ? structuredClone(s) : JSON.parse(JSON.stringify(s));
     if (s.guardEnabled) for (const night of bestPlan) {
       for (const person of eligible) {
