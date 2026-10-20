@@ -572,7 +572,7 @@
     }));
     const assigned=new Map(soldiers.map(p=>[p.id,[]]));
     const rows=[];
-    const maxNodes=120000;
+    const maxNodes=strictTwo ? 15000 : 120000;
     let visited=0;
     let limitReached=false;
     const failedStates=new Set();
