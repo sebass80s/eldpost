@@ -86,11 +86,23 @@
 
       <div class="duty-box">
         <div class="duty-title">
-          <span class="duty-dot patrol"></span><strong>Patrull efter eldpost</strong>
+          <span class="duty-dot patrol"></span><strong>Patrull</strong>
           <label class="switch"><input id="patrolEnabled" type="checkbox" /><span></span></label>
         </div>
-        <p class="hint">Den som blir avlöst går patrull med en kamrat när avlösningen ligger inom patrulltiden.</p>
-        <div id="patrolFields" class="form-grid three">
+        <p class="hint">Välj om patrullen ska kopplas till eldposten eller schemaläggas fristående. Tiderna styr när patrull får ske.</p>
+        <div id="patrolFields">
+          <div class="patrol-options">
+            <label>Patrullkoppling
+              <select id="patrolMode">
+                <option value="linked">Eldposten går patrull efter passet</option>
+                <option value="independent">Fristående patrull (eldposten går inte automatiskt)</option>
+              </select>
+            </label>
+            <label>Personer från tältet per patrull
+              <select id="patrolPeople"><option value="2">Två personer</option><option value="1">En person (kamrat från annat tält)</option></select>
+            </label>
+          </div>
+          <div class="form-grid three">
           <label>Från <input id="patrolStart" type="time" step="900" /></label>
           <label>Till <input id="patrolEnd" type="time" step="900" /></label>
           <label>Längd
@@ -98,6 +110,7 @@
               <option value="30">30 min</option><option value="60">1 h</option><option value="90">1,5 h</option><option value="120">2 h</option>
             </select>
           </label>
+          </div>
         </div>
       </div>
 
