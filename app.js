@@ -448,7 +448,7 @@
           const shifts=night.assignments.filter(a=>a.personId===p.id);
           const rest=maxRestGap(night.bounds,shifts);
           if(p.driver && rest<DRIVER_REST_MINUTES)return Infinity;
-          if(!p.driver && rest<REST_TARGET_MINUTES)restPenalty+=500000+(REST_TARGET_MINUTES-rest)*1800;
+          if(!p.driver && rest<REST_TARGET_MINUTES)restPenalty+=(REST_TARGET_MINUTES-rest)*300;
           if(!p.driver) {
             const bad=shifts.filter(a=>shiftQuality(a,night.bounds).bad).length;
             badCounts.set(p.id,(badCounts.get(p.id)||0)+bad);
