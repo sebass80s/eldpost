@@ -410,9 +410,9 @@
       const bad = proposed.filter(p=>shiftQuality(p,bounds).bad).length;
       const good = proposed.filter(p=>shiftQuality(p,bounds).good).length;
       const finalPatrol = proposed.some(p => p.type === 'patrol' && p.end === makeWindow(state.settings.patrolStart, state.settings.patrolEnd, parseClock(state.settings.fireStart))?.end);
-      const lateDriver = person.driver && proposed.length && !finalPatrol ? Math.max(0,Math.min(...proposed.map(p=>p.start))-bounds.start)*4 : 0;
+      const lateDriver = 0; // Inget särskilt tidspreferenskrav för förare.
       const badPenalty = bad * (quality.bad * 650 + (quality.lastBad?1200:0) + (existing.some(p=>shiftQuality(p,bounds).bad)?850:0));
-      const driverBadPenalty = person.driver ? bad * 1000000 : 0;
+      const driverBadPenalty = 0; // Förare får skitpass om sex timmars sammanhängande vila uppfylls.
       const goodPenalty = good * quality.good * 230;
       const score = hist * .28 + (historyRest.get(person.id) || 0) * .45 + minutes * .22 + clusters * 20 + burden * .23 + rotation * .8 + tie * 90 + shortRestPenalty + dutyBalancePenalty + interruptedPenalty + badPenalty + goodPenalty + lateDriver + driverBadPenalty;
       if (!best || score < best.score) best = { person, proposed, score };
@@ -617,7 +617,6 @@
           const shiftCount=prior.length;
           return shiftCount*900 + (bounds.end-bounds.start-rest)*1.7 +
             (q.bad?recent.bad*380:0) + (q.good?recent.good*95:0) +
-            (p.driver && q.bad ? 1000000 : 0) +
             recent.load*.15 + (p.driver && !(job.type === 'patrol' && job.end === makeWindow(state.settings.patrolStart,state.settings.patrolEnd,parseClock(state.settings.fireStart))?.end) ? Math.max(0,job.start-bounds.start)*4 : 0) +
             ((soldiers.indexOf(p)*31+trial*17+pos*13)%37);
         };
@@ -840,7 +839,7 @@
       good:nights.reduce((sum,n)=>sum+n.assignments.filter(a=>a.personId===p.id&&shiftQuality(a,n.bounds).good).length,0)
     }));
     for (const key of ['bad','good']) {
-      const qualityPool=key==='bad' ? qualityTotals.filter((_,i)=>!eligible[i].driver) : qualityTotals;
+      const qualityPool=qualityTotals;
       const avg=qualityPool.reduce((sum,p)=>sum+p[key],0)/Math.max(1,qualityPool.length);
       score += qualityPool.reduce((sum,p)=>sum+(p[key]-avg)**2,0)*(key==='bad'?250000:35000);
     }
