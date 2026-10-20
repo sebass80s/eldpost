@@ -497,6 +497,7 @@
       // Swap assignments as well: a fully loaded team may have no legal one-way moves.
       for(const night of nights.slice(lockedNightCount)) {
         const rows=night.assignments;
+        const typeLimit=type=>Math.max(2,Math.ceil((rows.filter(a=>a.type===type).length-soldiers.filter(p=>p.driver&&allowed(p,type)).length)/Math.max(1,regular.filter(p=>allowed(p,type)).length)));
         for(let i=0;i<rows.length;i++) for(let j=i+1;j<rows.length;j++) {
           const a=rows[i],b=rows[j];
           if(a.personId===b.personId)continue;
