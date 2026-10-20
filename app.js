@@ -322,7 +322,12 @@
       const burden = bounds.end - bounds.start - longest;
       const tie = ((idx * 71 + trial * 137 + nightIndex * 103) % 101) / 101;
       const shortRestPenalty = longest < REST_TARGET_MINUTES ? 100000 + (shortRestCounts.get(person.id) || 0) * 1000000 + (REST_TARGET_MINUTES-longest)*300 : 0;
-      const score = hist * .28 + (historyRest.get(person.id) || 0) * .45 + minutes * .22 + clusters * 20 + burden * .23 + rotation * .8 + tie * 90 + shortRestPenalty;
+      // Fristående patrull: prioritera den som ännu inte tjänstgjort denna natt.
+      // Därefter jämnas tjänstgöringsminuter ut över samtliga nätter.
+      const independent = state.settings.patrolEnabled && state.settings.patrolMode === 'independent';
+      const nightlyLoad = busyMinutes(existing);
+      const dutyBalancePenalty = independent ? (nightlyLoad > 0 ? 9000 + nightlyLoad * 12 : 0) + hist * 2.5 : 0;
+      const score = hist * .28 + (historyRest.get(person.id) || 0) * .45 + minutes * .22 + clusters * 20 + burden * .23 + rotation * .8 + tie * 90 + shortRestPenalty + dutyBalancePenalty;
       if (!best || score < best.score) best = { person, proposed, score };
     }
     return best;
@@ -462,6 +467,21 @@
         const burden = r ? n.bounds.end-n.bounds.start-r.longestRest : 0;
         score += Math.min(last,burden)**2 * .4;
         last = burden;
+      }
+    }
+    // Straffa 0/2-pass-split per natt och ojämn total tjänstgöring i fristående läge.
+    if (s.patrolEnabled && s.patrolMode === 'independent') {
+      const totalsWorked = eligible.map(p => nights.reduce((sum,n) => {
+        const row=n.rest.find(r=>r.personId===p.id);
+        return sum+(row?.busy||0);
+      },0));
+      const averageWorked=totalsWorked.reduce((sum,v)=>sum+v,0)/Math.max(1,totalsWorked.length);
+      score += totalsWorked.reduce((sum,v)=>sum+(v-averageWorked)**2,0)*12;
+      for (const n of nights) {
+        const worked=n.rest.map(r=>r.busy);
+        const zero=worked.filter(x=>x===0).length;
+        const doubled=worked.filter(x=>x>Math.max(s.fireDuration,s.patrolDuration)).length;
+        score += Math.min(zero,doubled)*1000000;
       }
     }
     const underRestCounts = eligible.map(p => nights.filter(n => n.rest.some(r => r.personId === p.id && r.longestRest < REST_TARGET_MINUTES)).length);
