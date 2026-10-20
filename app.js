@@ -435,7 +435,7 @@
       const selectPerson = (pool, proposed, filter = () => true) => {
         const args = [pool, assignmentsByPerson, () => proposed, bounds,
           historyMinutes, nightIndex, filter, historyRest, trial, shortRestCounts, false, qualityHistory];
-        return chooseCandidate(...args) || chooseCandidate(...args, true);
+        return chooseCandidate(...args) || chooseCandidate(...args.slice(0,-2), true, qualityHistory);
       };
       for (const slot of fireSlots) {
         const linkedSlotIndex = s.patrolMode === 'linked'
@@ -473,9 +473,9 @@
         const guardSlots = makeSlots(guardWindow, s.guardDuration, 'guard');
         for (const slot of guardSlots) {
           const guardArgs = [guardEligible, assignmentsByPerson, () => [slot], bounds, historyMinutes, nightIndex, () => true, historyRest, trial, shortRestCounts, false, qualityHistory];
-          const first = chooseCandidate(...guardArgs) || chooseCandidate(...guardArgs, true);
+          const first = chooseCandidate(...guardArgs) || chooseCandidate(...guardArgs.slice(0,-2), true, qualityHistory);
           const secondArgs = [guardEligible, assignmentsByPerson, () => [slot], bounds, historyMinutes, nightIndex, p => p.id !== first?.person.id, historyRest, trial, shortRestCounts, false, qualityHistory];
-          const second = s.guardPeople === 2 && first ? (chooseCandidate(...secondArgs) || chooseCandidate(...secondArgs, true)) : null;
+          const second = s.guardPeople === 2 && first ? (chooseCandidate(...secondArgs) || chooseCandidate(...secondArgs.slice(0,-2), true, qualityHistory)) : null;
           if (first && (s.guardPeople === 1 || second)) {
             const pairId = `guard-${nightIndex}-${slot.start}`;
             addInterval(first.person, { ...slot, pairId, externalPartner: s.guardPeople === 1 });
