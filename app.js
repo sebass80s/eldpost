@@ -441,12 +441,13 @@
     const allowed=(p,type)=>type==='fire'?canTakeFire(p):type==='patrol'?canTakePatrol(p):canTakeGuard(p);
     function score() {
       const badCounts=new Map(regular.map(p=>[p.id,0]));
-      let repeated=0, restPenalty=0;
+      let repeated=0, restPenalty=0, excessShifts=0;
       const badNights=new Map(regular.map(p=>[p.id,[]]));
       for(const [nightIndex,night] of nights.entries()) {
         for(const p of soldiers) {
           const shifts=night.assignments.filter(a=>a.personId===p.id);
           const rest=maxRestGap(night.bounds,shifts);
+          excessShifts+=Math.max(0,shifts.length-2)*1000000000;
           if(p.driver && rest<DRIVER_REST_MINUTES)return Infinity;
           if(!p.driver && rest<REST_TARGET_MINUTES)restPenalty+=(REST_TARGET_MINUTES-rest)*300;
           if(!p.driver) {
@@ -469,7 +470,7 @@
         const mean=total/Math.max(1,daily.length);
         nightBalancePenalty+=daily.reduce((a,b)=>a+(b-mean)**2,0)*18000;
       }
-      return values.reduce((a,b)=>a+(b-average)**2,0)*140000 + repeated + nightBalancePenalty + restPenalty;
+      return values.reduce((a,b)=>a+(b-average)**2,0)*140000 + repeated + nightBalancePenalty + restPenalty + excessShifts;
     }
     let current=score();
     for(let pass=0;pass<18;pass++) {
