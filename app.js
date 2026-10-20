@@ -615,9 +615,7 @@
     const guardEligible = state.soldiers.filter(canTakeGuard);
     const historyMinutes = new Map(eligible.map(p => [p.id, 0]));
     let bestPlan = null, bestScore = Infinity;
-    // Multi-night candidate search is expensive on mobile; retain broad sampling for short plans.
-    const trialLimit = targetNightCount === 1 ? 1 : targetNightCount >= 5 ? 45 : 75;
-    for (let trial = 0; trial < trialLimit; trial++) {
+    for (let trial = 0; trial < (targetNightCount === 1 ? 1 : 90); trial++) {
     const nights = [...historical];
     const historyRest = new Map(eligible.map(p => [p.id, 0]));
     const shortRestCounts = new Map(eligible.map(p => [p.id, 0]));
