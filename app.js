@@ -534,7 +534,7 @@
     if (score < bestScore) {bestScore=score;bestPlan=nights;}
     }
     const settingsCopy = typeof structuredClone === 'function' ? structuredClone(s) : JSON.parse(JSON.stringify(s));
-    for (const night of bestPlan) {
+    if (s.guardEnabled) for (const night of bestPlan) {
       for (const person of eligible) {
         const slots=night.assignments.filter(a=>a.personId===person.id).sort((a,b)=>a.start-b.start);
         if (slots.length === 2 && slots[0].end !== slots[1].start) {
