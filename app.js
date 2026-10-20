@@ -481,7 +481,9 @@
           if(!old || old.driver)continue;
           for(const person of regular) {
             if(person.id===old.id || !allowed(person,a.type))continue;
-            if(rows.some((x,j)=>j!==i && x.personId===person.id && overlaps(x,a)))continue;
+            const target=rows.filter((x,j)=>j!==i && x.personId===person.id);
+            if(target.length>=3 || target.filter(x=>x.type===a.type).length>=2)continue;
+            if(target.some(x=>overlaps(x,a)))continue;
             a.personId=person.id;
             const value=score();
             a.personId=old.id;
