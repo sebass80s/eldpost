@@ -138,9 +138,9 @@
     for (const type of ['patrol','guard']) {
       const container = type === 'patrol' ? els.patrolNights : els.guardNights;
       const existing = container.querySelectorAll('input[data-duty-night]');
-      const prior = existing.length
-        ? [...existing].filter(el=>el.checked).map(el=>Number(el.dataset.dutyNight))
-        : state.settings[type+'Nights'];
+      const prior = unknown && existing.length && ![...existing].some(el=>Number(el.dataset.dutyNight)===offset)
+        ? null
+        : existing.length ? [...existing].filter(el=>el.checked).map(el=>Number(el.dataset.dutyNight)) : state.settings[type+'Nights'];
       container.innerHTML = Array.from({length:count},(_,i) => {
         const index=i+offset;
         return `<label class="total-night-choice"><input type="checkbox" data-duty-night="${index}" ${!Array.isArray(prior)||prior.includes(index)?'checked':''}>Natt ${index+1}</label>`;
