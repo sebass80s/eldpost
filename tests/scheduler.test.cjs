@@ -17,7 +17,7 @@ function scheduler() {
   const elements = new Map();
   const element = () => ({ classList: {add(){},remove(){},toggle(){}}, textContent:'',value:'',checked:false });
   const context = {document:{getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id)}},
-    localStorage:{getItem(){return null},setItem(){}}, crypto:{randomUUID(){return 'test'}},navigator:{}, window:{},Date,Math,structuredClone};
+    localStorage:{getItem(){return null},setItem(){}}, crypto:{randomUUID(){return 'test'}},navigator:{}, window:{},Date,Math,structuredClone,clearTimeout(){},setTimeout(){return 1}};
   vm.runInNewContext(code,context,{filename:'app.js'});
   return context.runSchedule;
 }
