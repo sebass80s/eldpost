@@ -383,7 +383,6 @@
       nights.push({ nightIndex, assignments, rest, warnings, bounds });
     }
 
-    const settingsCopy = typeof structuredClone === 'function' ? structuredClone(s) : JSON.parse(JSON.stringify(s));
     const totals = eligible.map(p=>nights.reduce((sum,n)=>{
       const r=n.rest.find(x=>x.personId===p.id);
       return sum + (r ? n.bounds.end-n.bounds.start-r.longestRest : 0);
@@ -402,6 +401,7 @@
     score += nights.reduce((sum,n)=>sum+n.warnings.length*10000000,0);
     if (score < bestScore) {bestScore=score;bestPlan=nights;}
     }
+    const settingsCopy = typeof structuredClone === 'function' ? structuredClone(s) : JSON.parse(JSON.stringify(s));
     state.generated = { createdAt: new Date().toISOString(), nights: bestPlan, settings: settingsCopy };
     activeNight = 0; sharedUrl=''; els.sharePanel.classList.add('hidden'); saveStateSoon(); renderResults();
     els.resultSection.classList.remove('hidden');
