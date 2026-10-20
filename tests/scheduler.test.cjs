@@ -88,3 +88,16 @@ test('impossible small team does not publish incomplete schedule',()=>{
   assert.equal(plan,null);
   assert.ok(error.length>0);
 });
+
+test('heavy patrol coverage never gives more than three shifts per person',()=>{
+  const st=state({size:10,nights:3,patrolPeople:2});
+  const {plan,error}=run(st);
+  assert.ok(plan,error);
+  assertSafe(plan,st);
+  for(const night of plan.nights) for(const p of st.soldiers) {
+    const shifts=night.assignments.filter(a=>a.personId===p.id);
+    assert.ok(shifts.length<=3,'No soldier may receive four or more shifts in one night');
+    for(const type of ['fire','patrol','guard'])
+      assert.ok(shifts.filter(a=>a.type===type).length<=2,'At most two shifts of the same kind');
+  }
+});
