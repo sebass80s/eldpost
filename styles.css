@@ -135,3 +135,7 @@ input:focus, select:focus { border-color: var(--green-2); box-shadow: 0 0 0 3px 
 .primary-button:disabled { opacity: .5; cursor: not-allowed; }
 
 .soldier-name.missing-name { border-color: #b16a27; background: #fff5e8; box-shadow: 0 0 0 2px rgba(177,106,39,.12); }
+
+.patrol-options { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px; }
+.patrol-options label { display:grid; gap:5px; }
+@media(max-width:520px) { .patrol-options { grid-template-columns:1fr; } }
