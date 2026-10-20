@@ -130,3 +130,6 @@ input:focus, select:focus { border-color: var(--green-2); box-shadow: 0 0 0 3px 
 .share-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .share-qr { display:grid; place-items:center; margin:15px auto 8px; max-width:330px; }
 .share-qr svg { display:block; width:min(100%, 300px); height:auto; padding:10px; background:white; border-radius:10px; }
+
+.soldier-name.duplicate-name { border-color: #b43731; background: #fff0ed; box-shadow: 0 0 0 2px rgba(180,55,49,.17); }
+.primary-button:disabled { opacity: .5; cursor: not-allowed; }
