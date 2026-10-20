@@ -76,6 +76,7 @@
 
   function initOptions() {
     for (let n = MIN_SOLDIERS; n <= MAX_SOLDIERS; n++) els.soldierCount.add(new Option(String(n), String(n)));
+    els.nightCount.add(new Option('Okänt · en natt i taget', '0'));
     for (let n = 1; n <= 14; n++) els.nightCount.add(new Option(`${n} ${n === 1 ? 'natt' : 'nätter'}`, String(n)));
   }
 
@@ -84,7 +85,7 @@
     els.soldierCount.value = String(state.soldiers.length);
     updateSmallTeamWarning();
     els.startDate.value = s.startDate || todayLocal();
-    els.nightCount.value = String(s.nightCount || 1);
+    els.nightCount.value = String(s.nightCount ?? 3);
     els.fireStart.value = s.fireStart; els.fireEnd.value = s.fireEnd; els.fireDuration.value = String(s.fireDuration);
     els.patrolMode.value=s.patrolMode || 'linked'; els.patrolPeople.value=String(s.patrolPeople || 2);
     els.patrolEnabled.checked = !!s.patrolEnabled; els.patrolStart.value = s.patrolStart; els.patrolEnd.value = s.patrolEnd; els.patrolDuration.value = String(s.patrolDuration);
@@ -97,6 +98,7 @@
   }
 
   function readSettingsFromControls() {
+    const oldSettings=state.settings;
     state.settings = {
       startDate: els.startDate.value || todayLocal(), nightCount: Number(els.nightCount.value),
       fireStart: els.fireStart.value, fireEnd: els.fireEnd.value, fireDuration: Number(els.fireDuration.value),
@@ -106,7 +108,12 @@
       allowPcFire: els.allowPcFire.checked, allowPcPatrol: els.allowPcPatrol.checked,
       allowStfFire: els.allowStfFire.checked, allowStfPatrol: els.allowStfPatrol.checked
     };
-    state.generated = null;
+    if (state.settings.nightCount === 0 && state.generated?.settings?.nightCount === 0) {
+      for(const type of ['patrol','guard']) {
+        const previous=oldSettings[type+'Nights']||[];
+        state.settings[type+'Nights']=[...new Set([...previous,...state.settings[type+'Nights']])].sort((a,b)=>a-b);
+      }
+    } else state.generated = null;
     sharedUrl='';
     els.sharePanel.classList.add('hidden');
     updateCombinedDutyWarning();
@@ -125,15 +132,19 @@
   }
 
   function renderDutyNightChoices() {
-    const count = Number(els.nightCount.value) || 1;
+    const unknown = els.nightCount.value === '0';
+    const offset = unknown ? (state.generated?.settings?.nightCount === 0 ? state.generated.nights.length : 0) : 0;
+    const count = unknown ? 1 : Number(els.nightCount.value) || 1;
     for (const type of ['patrol','guard']) {
       const container = type === 'patrol' ? els.patrolNights : els.guardNights;
       const existing = container.querySelectorAll('input[data-duty-night]');
       const prior = existing.length
         ? [...existing].filter(el=>el.checked).map(el=>Number(el.dataset.dutyNight))
         : state.settings[type+'Nights'];
-      container.innerHTML = Array.from({length:count},(_,i) =>
-        `<label class="total-night-choice"><input type="checkbox" data-duty-night="${i}" ${!Array.isArray(prior)||prior.includes(i)?'checked':''}>Natt ${i+1}</label>`).join('');
+      container.innerHTML = Array.from({length:count},(_,i) => {
+        const index=i+offset;
+        return `<label class="total-night-choice"><input type="checkbox" data-duty-night="${index}" ${!Array.isArray(prior)||prior.includes(index)?'checked':''}>Natt ${index+1}</label>`;
+      }).join('');
       container.querySelectorAll('input').forEach(el=>el.addEventListener('change',()=>{readSettingsFromControls();updateCombinedDutyWarning();}));
     }
   }
@@ -499,6 +510,8 @@
     els.generateMessage.textContent = '';
 
     const s = state.settings;
+    const historical = s.nightCount === 0 && state.generated?.settings?.nightCount === 0 ? state.generated.nights : [];
+    const targetNightCount = s.nightCount === 0 ? historical.length + 1 : s.nightCount;
     const fireRaw = parseClock(s.fireStart);
     const fireWindow = makeWindow(s.fireStart, s.fireEnd, fireRaw);
     const patrolWindow = s.patrolEnabled ? makeWindow(s.patrolStart, s.patrolEnd, fireRaw) : null;
@@ -513,13 +526,25 @@
     const guardEligible = state.soldiers.filter(canTakeGuard);
     const historyMinutes = new Map(eligible.map(p => [p.id, 0]));
     let bestPlan = null, bestScore = Infinity;
-    for (let trial = 0; trial < (s.nightCount === 1 ? 1 : 90); trial++) {
-    const nights = [];
+    for (let trial = 0; trial < (targetNightCount === 1 ? 1 : 90); trial++) {
+    const nights = [...historical];
     const historyRest = new Map(eligible.map(p => [p.id, 0]));
     const shortRestCounts = new Map(eligible.map(p => [p.id, 0]));
     const qualityHistory = new Map(eligible.map(p=>[p.id,{bad:0,good:0,lastBad:false}]));
     historyMinutes.forEach((_,id) => historyMinutes.set(id,0));
-    for (let nightIndex = 0; nightIndex < s.nightCount; nightIndex++) {
+    for (const previous of historical) {
+      for(const p of eligible) {
+        const duties=previous.assignments.filter(a=>a.personId===p.id);
+        const rest=previous.rest.find(r=>r.personId===p.id);
+        const quality=qualityHistory.get(p.id);
+        const bad=duties.filter(d=>shiftQuality(d,previous.bounds).bad).length;
+        quality.bad+=bad; quality.good+=duties.filter(d=>shiftQuality(d,previous.bounds).good).length;
+        quality.lastBad=bad>0;
+        historyMinutes.set(p.id,(historyMinutes.get(p.id)||0)+(rest?.busy||0));
+        historyRest.set(p.id,(historyRest.get(p.id)||0)+(previous.bounds.end-previous.bounds.start-(rest?.longestRest||0)));
+      }
+    }
+    for (let nightIndex = historical.length; nightIndex < targetNightCount; nightIndex++) {
       const assignmentsByPerson = new Map(eligible.map(p => [p.id, []]));
       const assignments = [];
       const warnings = [];
@@ -702,6 +727,7 @@
       for (const night of bestPlan.filter(n=>dutyEnabledOnNight(s,'patrol',n.nightIndex)&&dutyEnabledOnNight(s,'guard',n.nightIndex))) night.warnings.unshift('Eldpost, patrull och vaktpost överlappar. Upplägget är inte optimalt: kontrollera bemanning och vila extra noga.');
     }
     state.generated = { createdAt: new Date().toISOString(), nights: bestPlan, settings: settingsCopy };
+    if (s.nightCount === 0) { renderDutyNightChoices(); els.generateButton.textContent='Generera nästa natt'; }
     activeNight = 0; totalView = false; selectedTotalNights = null; sharedUrl=''; els.sharePanel.classList.add('hidden'); saveStateSoon(); renderResults();
     els.resultSection.classList.remove('hidden');
     els.resultSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -910,6 +936,7 @@
     [els.startDate, els.fireStart, els.fireEnd, els.fireDuration, els.patrolStart, els.patrolEnd, els.patrolDuration, els.patrolMode, els.patrolPeople, els.guardStart, els.guardEnd, els.guardDuration, els.guardPeople].forEach(el => el.addEventListener('change', () => { readSettingsFromControls(); els.resultSection.classList.add('hidden'); }));
     [els.patrolEnabled, els.guardEnabled, els.allowPcFire, els.allowPcPatrol, els.allowStfFire, els.allowStfPatrol].forEach(el => el.addEventListener('change', () => { updateOptionalFields(); readSettingsFromControls(); els.resultSection.classList.add('hidden'); }));
     els.generateButton.addEventListener('click', generatePlan);
+    els.nightCount.addEventListener('change',()=>{els.generateButton.textContent=els.nightCount.value==='0'?'Generera nästa natt':'Generera schema';});
     els.copyButton.addEventListener('click', copyCurrentNight);
     els.shareButton.addEventListener('click', makeShareLink);
     els.shareCopyButton.addEventListener('click', copyShareLink);
@@ -920,7 +947,8 @@
     });
   }
 
-  initOptions(); syncControlsFromState(); renderSoldiers(); renderTentMaps(); bindEvents();
+  initOptions(); syncControlsFromState();
+  if(state.settings.nightCount===0) els.generateButton.textContent='Generera nästa natt'; renderSoldiers(); renderTentMaps(); bindEvents();
   if (state.generated?.nights?.length) { els.resultSection.classList.remove('hidden'); renderResults(); }
   if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 })();
