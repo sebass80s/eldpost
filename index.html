@@ -140,7 +140,22 @@
           <p class="step">Schema</p>
           <h2 id="resultTitle">Natt 1</h2>
         </div>
-        <button id="copyButton" class="secondary-button" type="button">Kopiera</button>
+        <button id="copyButton" class="secondary-button" type="button">Kopiera natt</button>
+      </div>
+      <div class="share-controls">
+        <button id="shareButton" class="primary-button" type="button">Dela hela schemat</button>
+        <p class="hint">En fryst kopia skapas i länken. Namn, tider och sovplatser ingår. Endast den du ger länken till bör få tillgång.</p>
+        <div id="sharePanel" class="share-panel hidden">
+          <label for="shareUrl">Schemalänk</label>
+          <textarea id="shareUrl" readonly rows="3" aria-label="Delningslänk"></textarea>
+          <div class="share-actions">
+            <button type="button" id="shareCopyButton" class="secondary-button">Kopiera länk</button>
+            <button type="button" id="nativeShareButton" class="secondary-button">Dela via telefonen</button>
+          </div>
+          <div id="shareQr" class="share-qr" aria-label="QR-kod till schemat"></div>
+          <p id="shareQrHelp" class="hint"></p>
+        </div>
+        <p id="shareStatus" role="status" class="validation-message"></p>
       </div>
       <div id="nightTabs" class="night-tabs"></div>
       <div id="scheduleWarnings"></div>
@@ -168,6 +183,7 @@
     </article>
   </template>
 
+  <script src="/qrcode.js" defer></script>
   <script src="/app.js" defer></script>
 </body>
 </html>
