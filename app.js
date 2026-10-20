@@ -22,6 +22,8 @@
   };
 
   let activeNight = 0;
+  let totalView = false;
+  let selectedTotalNights = null;
   let saveTimer = null;
   let state = loadState() || makeDefaultState();
 
@@ -340,7 +342,7 @@
       // Avbruten sömn tillåts endast som sista utväg när vaktpost är aktiv.
       const ordered = [...combined].sort((a,b)=>a.start-b.start);
       const interrupted = ordered.length === 2 && ordered[0].end !== ordered[1].start;
-      if (interrupted && (!state.settings.guardEnabled || !allowShortRest)) continue;
+      if (interrupted && state.settings.guardEnabled && !allowShortRest) continue;
       if (proposed.some(p => existing.some(e => overlaps(p, e)))) continue;
       const all = [...existing, ...proposed];
       const longest = maxRestGap(bounds, all);
@@ -544,7 +546,7 @@
       for (const night of bestPlan) night.warnings.unshift('Eldpost, patrull och vaktpost överlappar. Upplägget är inte optimalt: kontrollera bemanning och vila extra noga.');
     }
     state.generated = { createdAt: new Date().toISOString(), nights: bestPlan, settings: settingsCopy };
-    activeNight = 0; sharedUrl=''; els.sharePanel.classList.add('hidden'); saveStateSoon(); renderResults();
+    activeNight = 0; totalView = false; selectedTotalNights = null; sharedUrl=''; els.sharePanel.classList.add('hidden'); saveStateSoon(); renderResults();
     els.resultSection.classList.remove('hidden');
     els.resultSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -569,9 +571,11 @@
     if (!state.generated?.nights?.length) { els.resultSection.classList.add('hidden'); return; }
     activeNight = Math.min(activeNight, state.generated.nights.length - 1);
     const night = state.generated.nights[activeNight];
+    if (totalView) { renderTotalView(); return; }
     els.resultTitle.textContent = `Natt ${activeNight + 1} · ${formatNightDate(activeNight)}`;
-    els.nightTabs.innerHTML = state.generated.nights.map((_, i) => `<button type="button" class="night-tab ${i === activeNight ? 'active' : ''}" data-night="${i}">Natt ${i+1}</button>`).join('');
-    els.nightTabs.querySelectorAll('.night-tab').forEach(btn => btn.addEventListener('click', () => { activeNight = Number(btn.dataset.night); renderResults(); }));
+    els.nightTabs.innerHTML = state.generated.nights.map((_, i) => `<button type="button" class="night-tab ${i === activeNight ? 'active' : ''}" data-night="${i}">Natt ${i+1}</button>`).join('') + '<button type="button" class="night-tab" id="totalTab">Totalt</button>';
+    els.nightTabs.querySelectorAll('.night-tab').forEach(btn => btn.addEventListener('click', () => { activeNight = Number(btn.dataset.night); totalView = false; renderResults(); }));
+    els.nightTabs.querySelector('#totalTab').addEventListener('click', () => { totalView = true; renderResults(); });
     els.scheduleWarnings.innerHTML = night.warnings.map(w => `<p class="warning">${escapeHtml(w)}</p>`).join('');
     els.scheduleTable.innerHTML = renderScheduleRows(night);
     els.restSummary.innerHTML = night.rest.map(r => {
@@ -581,6 +585,44 @@
       return `<div class="rest-item"><div><div class="rest-name">${escapeHtml(displayName(p))}</div><div class="rest-meta">${formatMinutes(r.busy)} tjänst · ${r.clusters} block${role}</div></div><div class="rest-hours ${driverClass}">Längsta vila<br>${formatMinutes(r.longestRest)}</div></div>`;
     }).join('');
     renderTentMaps();
+  }
+
+  function renderTotalView() {
+    const nights = state.generated.nights;
+    if (!selectedTotalNights || !selectedTotalNights.some(i => i < nights.length)) selectedTotalNights = nights.map((_,i)=>i);
+    selectedTotalNights = selectedTotalNights.filter(i => i < nights.length);
+    els.resultTitle.textContent = 'Total vila · valda nätter';
+    els.nightTabs.innerHTML = nights.map((_,i)=>`<button type="button" class="night-tab" data-night="${i}">Natt ${i+1}</button>`).join('') +
+      '<button type="button" class="night-tab active" id="totalTab">Totalt</button>';
+    els.nightTabs.querySelectorAll('[data-night]').forEach(btn => btn.addEventListener('click',()=>{
+      activeNight=Number(btn.dataset.night);totalView=false;renderResults();
+    }));
+    const options = nights.map((_,i)=>`<label class="total-night-choice"><input type="checkbox" data-total-night="${i}" ${selectedTotalNights.includes(i)?'checked':''}>Natt ${i+1}</label>`).join('');
+    els.scheduleWarnings.innerHTML = '<p class="hint">Välj vilka nätter som ska ingå i sammanställningen. Total vila räknas som nattens tid minus tjänstgöring, även om vilan är uppdelad.</p>';
+    els.scheduleTable.innerHTML = '<div class="total-night-picker">'+options+'</div>';
+    els.scheduleTable.querySelectorAll('[data-total-night]').forEach(box=>box.addEventListener('change',()=>{
+      const i=Number(box.dataset.totalNight);
+      if(box.checked) selectedTotalNights=[...new Set([...selectedTotalNights,i])].sort((a,b)=>a-b);
+      else selectedTotalNights=selectedTotalNights.filter(n=>n!==i);
+      updateTotalSummary();
+    }));
+    updateTotalSummary();
+    renderTentMaps();
+  }
+
+  function updateTotalSummary() {
+    const nights=state.generated.nights;
+    els.restSummary.innerHTML=state.soldiers.map(p=>{
+      const details=selectedTotalNights.map(i=>nights[i]).filter(Boolean).map(n=>{
+        const row=n.rest.find(r=>r.personId===p.id);
+        return {rest: row ? n.bounds.end-n.bounds.start-row.busy : n.bounds.end-n.bounds.start,
+          continuous: row ? row.longestRest : n.bounds.end-n.bounds.start, duty:row?.busy || 0};
+      });
+      const total=details.reduce((a,b)=>a+b.rest,0);
+      const duty=details.reduce((a,b)=>a+b.duty,0);
+      const worst=details.length?Math.min(...details.map(d=>d.continuous)):0;
+      return `<div class="rest-item"><div><div class="rest-name">${escapeHtml(displayName(p))}</div><div class="rest-meta">${formatMinutes(duty)} tjänst · ${details.length} nätter · kortaste längsta vila ${formatMinutes(worst)}</div></div><div class="rest-hours">Total vila<br>${formatMinutes(total)}</div></div>`;
+    }).join('');
   }
 
   function renderScheduleRows(night) {
