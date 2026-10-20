@@ -622,12 +622,13 @@
         d: state.generated.settings.startDate,
         p: state.soldiers.map((p,i)=>[i,(p.name || '').trim() || 'Plats '+p.sleepPlace,p.sleepPlace]),
         n: state.generated.nights.map(n=>{
-          const items=n.assignments.filter(a=>a.type!=='patrol').map(a=>[a.type,a.start,a.end,[state.soldiers.findIndex(p=>p.id===a.personId)]]);
+          const items=n.assignments.filter(a=>a.type==='fire').map(a=>[a.type,a.start,a.end,[state.soldiers.findIndex(p=>p.id===a.personId)]]);
           const pairs=new Map();
-          for(const a of n.assignments.filter(a=>a.type==='patrol')){
-            const key=a.pairId || a.start+'-'+a.end;
-            if(!pairs.has(key))pairs.set(key,['patrol',a.start,a.end,[]]);
+          for(const a of n.assignments.filter(a=>a.type==='patrol'||a.type==='guard')){
+            const key=a.type+'-'+(a.pairId || a.start+'-'+a.end);
+            if(!pairs.has(key))pairs.set(key,[a.type,a.start,a.end,[],false]);
             pairs.get(key)[3].push(state.soldiers.findIndex(p=>p.id===a.personId));
+            pairs.get(key)[4] ||= !!a.externalPartner;
           }
           return [...items,...pairs.values()].sort((a,b)=>a[1]-b[1]);
         })
