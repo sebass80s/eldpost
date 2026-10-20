@@ -127,3 +127,15 @@ test('normal ten-person fire and single patrol fits two-shift limit fairly',()=>
     sum+night.assignments.filter(a=>a.personId===p.id && a.start%1440>=120 && a.start%1440<300).length,0));
   assert.ok(Math.max(...counts)-Math.min(...counts)<=1,'Bad shifts must be shared as equally as possible');
 });
+
+test('short rest rotates rather than repeating on consecutive nights in heavy standard setup',()=>{
+  const st=state({size:10,nights:3,patrolPeople:2});
+  const {plan,error}=run(st);
+  assert.ok(plan,error);
+  assertSafe(plan,st);
+  for(const p of st.soldiers.filter(p=>!p.driver)) {
+    const short=plan.nights.map(n=>n.rest.find(r=>r.personId===p.id).longestRest<240);
+    for(let i=1;i<short.length;i++)
+      assert.ok(!(short[i] && short[i-1]),'The same soldier should not get short rest on consecutive nights in this scenario');
+  }
+});
