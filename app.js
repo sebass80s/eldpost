@@ -792,7 +792,28 @@
     if (tripleDutyOverlap(s)) {
       for (const night of bestPlan.filter(n=>dutyEnabledOnNight(s,'patrol',n.nightIndex)&&dutyEnabledOnNight(s,'guard',n.nightIndex))) night.warnings.unshift('Eldpost, patrull och vaktpost överlappar. Upplägget är inte optimalt: kontrollera bemanning och vila extra noga.');
     }
-    state.generated = { createdAt: new Date().toISOString(), nights: bestPlan, settings: settingsCopy };
+    // Only final, verifiable warnings belong in a published schedule.
+    // Preserve historical nights unchanged in incremental mode.
+    for (const night of bestPlan.slice(historical.length)) {
+      const finalWarnings = [];
+      for (const row of night.rest) {
+        if (row.longestRest < REST_TARGET_MINUTES) {
+          const person = state.soldiers.find(p=>p.id===row.personId);
+          finalWarnings.push(`${displayName(person)} får bara ${formatMinutes(row.longestRest)} sammanhängande vila denna natt (målet är minst 4 h).`);
+        }
+      }
+      if (dutyEnabledOnNight(s,'guard',night.nightIndex)) {
+        for (const person of eligible) {
+          const duties=night.assignments.filter(a=>a.personId===person.id).sort((a,b)=>a.start-b.start);
+          if (duties.length===2 && duties[0].end!==duties[1].start)
+            finalWarnings.push(`${displayName(person)} har avbruten sömn mellan två pass. Undantag används eftersom vaktpost är aktiv.`);
+        }
+      }
+      if (tripleDutyOverlap(s) && dutyEnabledOnNight(s,'patrol',night.nightIndex) && dutyEnabledOnNight(s,'guard',night.nightIndex))
+        finalWarnings.unshift('Eldpost, patrull och vaktpost överlappar. Upplägget är inte optimalt: kontrollera bemanning och vila extra noga.');
+      night.warnings=[...new Set(finalWarnings)];
+    }
+        state.generated = { createdAt: new Date().toISOString(), nights: bestPlan, settings: settingsCopy };
     if (s.nightCount === 0) { renderDutyNightChoices(); els.generateButton.textContent='Generera nästa natt'; }
     activeNight = 0; totalView = false; selectedTotalNights = null; sharedUrl=''; els.sharePanel.classList.add('hidden'); saveStateSoon(); renderResults();
     els.resultSection.classList.remove('hidden');
