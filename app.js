@@ -5,6 +5,7 @@
   const MIN_SOLDIERS = 4;
   const MAX_SOLDIERS = 20;
   const DRIVER_REST_MINUTES = 360;
+  const REST_TARGET_MINUTES = 240;
   const DEFAULT_COUNT = 12;
 
   const $ = id => document.getElementById(id);
@@ -266,7 +267,7 @@
   function clusterCount(intervals) { return mergeIntervals(intervals).length; }
   function displayName(s) { return (s.name || '').trim() || `Plats ${s.sleepPlace}`; }
 
-  function chooseCandidate(eligible, assignmentsByPerson, proposedFactory, bounds, historyMinutes, nightIndex, extraFilter = () => true, historyRest = new Map(), trial = 0) {
+  function chooseCandidate(eligible, assignmentsByPerson, proposedFactory, bounds, historyMinutes, nightIndex, extraFilter = () => true, historyRest = new Map(), trial = 0, shortRestCounts = new Map(), allowShortRest = false) {
     let best = null;
     for (let idx = 0; idx < eligible.length; idx++) {
       const person = eligible[idx]; if (!extraFilter(person)) continue;
@@ -276,11 +277,13 @@
       const all = [...existing, ...proposed];
       const longest = maxRestGap(bounds, all);
       if (person.driver && longest < DRIVER_REST_MINUTES) continue;
+      if (!allowShortRest && longest < REST_TARGET_MINUTES) continue;
       const minutes = busyMinutes(all), clusters = clusterCount(all), hist = historyMinutes.get(person.id) || 0;
       const rotation = ((idx - (nightIndex * 2)) % eligible.length + eligible.length) % eligible.length;
       const burden = bounds.end - bounds.start - longest;
       const tie = ((idx * 71 + trial * 137 + nightIndex * 103) % 101) / 101;
-      const score = hist * .28 + (historyRest.get(person.id) || 0) * .45 + minutes * .22 + clusters * 20 + burden * .23 + rotation * .8 + tie * 90;
+      const shortRestPenalty = longest < REST_TARGET_MINUTES ? 100000 + (shortRestCounts.get(person.id) || 0) * 1000000 + (REST_TARGET_MINUTES-longest)*300 : 0;
+      const score = hist * .28 + (historyRest.get(person.id) || 0) * .45 + minutes * .22 + clusters * 20 + burden * .23 + rotation * .8 + tie * 90 + shortRestPenalty;
       if (!best || score < best.score) best = { person, proposed, score };
     }
     return best;
@@ -324,6 +327,7 @@
     for (let trial = 0; trial < (s.nightCount === 1 ? 1 : 90); trial++) {
     const nights = [];
     const historyRest = new Map(eligible.map(p => [p.id, 0]));
+    const shortRestCounts = new Map(eligible.map(p => [p.id, 0]));
     historyMinutes.forEach((_,id) => historyMinutes.set(id,0));
     for (let nightIndex = 0; nightIndex < s.nightCount; nightIndex++) {
       const assignmentsByPerson = new Map(eligible.map(p => [p.id, []]));
@@ -338,23 +342,25 @@
       const fireSlots = makeSlots(fireWindow, s.fireDuration, 'fire');
       for (const slot of fireSlots) {
         const patrolFollows = !!(patrolWindow && slot.end >= patrolWindow.start && slot.end + s.patrolDuration <= patrolWindow.end);
-        const pick = chooseCandidate(
+        const fireCandidateArgs = [
           fireEligible, assignmentsByPerson,
           () => [slot, patrolFollows ? { type: 'patrol', start: slot.end, end: slot.end + s.patrolDuration, linked: true } : null],
           bounds, historyMinutes, nightIndex,
-          person => !patrolFollows || canTakePatrol(person), historyRest, trial
-        );
+          person => !patrolFollows || canTakePatrol(person), historyRest, trial, shortRestCounts
+        ];
+        const pick = chooseCandidate(...fireCandidateArgs) || chooseCandidate(...fireCandidateArgs, true);
         if (!pick) { warnings.push(`Ingen möjlig eldpost ${formatRange(slot.start, slot.end)} utan att bryta vila eller överlapp.`); continue; }
         addInterval(pick.person, slot);
         if (patrolFollows) {
           const patrol = { type: 'patrol', start: slot.end, end: slot.end + s.patrolDuration, linked: true, outgoing: true, pairId: `${nightIndex}-${slot.end}` };
           addInterval(pick.person, patrol);
-          const buddyPick = chooseCandidate(
+          const buddyArgs = [
             patrolEligible, assignmentsByPerson,
             () => [{ type: 'patrol', start: patrol.start, end: patrol.end, linked: true, buddy: true, pairId: patrol.pairId }],
             bounds, historyMinutes, nightIndex,
-            p => p.id !== pick.person.id, historyRest, trial
-          );
+            p => p.id !== pick.person.id, historyRest, trial, shortRestCounts
+          ];
+          const buddyPick = chooseCandidate(...buddyArgs) || chooseCandidate(...buddyArgs, true);
           if (buddyPick) addInterval(buddyPick.person, { type: 'patrol', start: patrol.start, end: patrol.end, linked: true, buddy: true, pairId: patrol.pairId });
           else warnings.push(`Ingen ledig patrullkamrat ${formatRange(patrol.start, patrol.end)}.`);
         }
@@ -363,7 +369,8 @@
       if (guardWindow) {
         const guardSlots = makeSlots(guardWindow, s.guardDuration, 'guard');
         for (const slot of guardSlots) {
-          const pick = chooseCandidate(guardEligible, assignmentsByPerson, () => [slot], bounds, historyMinutes, nightIndex, () => true, historyRest, trial);
+          const guardArgs = [guardEligible, assignmentsByPerson, () => [slot], bounds, historyMinutes, nightIndex, () => true, historyRest, trial, shortRestCounts];
+          const pick = chooseCandidate(...guardArgs) || chooseCandidate(...guardArgs, true);
           if (pick) addInterval(pick.person, slot);
           else warnings.push(`Ingen möjlig vaktpost ${formatRange(slot.start, slot.end)} utan att bryta vila eller överlapp.`);
         }
@@ -374,10 +381,16 @@
         return { personId: person.id, longestRest: maxRestGap(bounds, personal), busy: busyMinutes(personal), clusters: clusterCount(personal) };
       });
       for (const r of rest) {
+        if (r.longestRest < REST_TARGET_MINUTES) shortRestCounts.set(r.personId, (shortRestCounts.get(r.personId) || 0) + 1);
         historyMinutes.set(r.personId, (historyMinutes.get(r.personId) || 0) + r.busy);
         historyRest.set(r.personId, (historyRest.get(r.personId) || 0) + bounds.end - bounds.start - r.longestRest);
       }
 
+      const shortRest = rest.filter(r => r.longestRest < REST_TARGET_MINUTES);
+      for (const r of shortRest) {
+        const soldier = state.soldiers.find(p => p.id === r.personId);
+        warnings.push(`${displayName(soldier)} får bara ${formatMinutes(r.longestRest)} sammanhängande vila denna natt (målet är minst 4 h).`);
+      }
       const driversBroken = rest.filter(r => state.soldiers.find(p => p.id === r.personId)?.driver && r.longestRest < DRIVER_REST_MINUTES);
       if (driversBroken.length) warnings.push('Minst en förare får mindre än sex timmars sammanhängande vila.');
       nights.push({ nightIndex, assignments, rest, warnings, bounds });
@@ -398,7 +411,11 @@
         last = burden;
       }
     }
-    score += nights.reduce((sum,n)=>sum+n.warnings.length*10000000,0);
+    const underRestCounts = eligible.map(p => nights.filter(n => n.rest.some(r => r.personId === p.id && r.longestRest < REST_TARGET_MINUTES)).length);
+    const extraViolations = underRestCounts.reduce((sum,count) => sum + Math.max(0,count-1),0);
+    const violations = underRestCounts.reduce((sum,count)=>sum+count,0);
+    score += extraViolations * 1000000000000 + violations * 1000000000;
+    score += nights.reduce((sum,n)=>sum+n.warnings.filter(w=>!w.includes('sammanhängande vila denna natt')).length*10000000,0);
     if (score < bestScore) {bestScore=score;bestPlan=nights;}
     }
     const settingsCopy = typeof structuredClone === 'function' ? structuredClone(s) : JSON.parse(JSON.stringify(s));
