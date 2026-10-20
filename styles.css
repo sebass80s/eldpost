@@ -133,3 +133,5 @@ input:focus, select:focus { border-color: var(--green-2); box-shadow: 0 0 0 3px 
 
 .soldier-name.duplicate-name { border-color: #b43731; background: #fff0ed; box-shadow: 0 0 0 2px rgba(180,55,49,.17); }
 .primary-button:disabled { opacity: .5; cursor: not-allowed; }
+
+.soldier-name.missing-name { border-color: #b16a27; background: #fff5e8; box-shadow: 0 0 0 2px rgba(177,106,39,.12); }
