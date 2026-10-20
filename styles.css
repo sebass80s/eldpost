@@ -139,3 +139,7 @@ input:focus, select:focus { border-color: var(--green-2); box-shadow: 0 0 0 3px 
 .patrol-options { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px; }
 .patrol-options label { display:grid; gap:5px; }
 @media(max-width:520px) { .patrol-options { grid-template-columns:1fr; } }
+
+.total-night-picker { display:flex; flex-wrap:wrap; gap:10px; padding:12px; background:#fffdf7; }
+.total-night-choice { display:flex; align-items:center; gap:6px; font-size:.84rem; }
+.total-night-choice input { width:18px; height:18px; accent-color:var(--green); }
