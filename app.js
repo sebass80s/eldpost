@@ -111,7 +111,8 @@
     if (state.settings.nightCount === 0 && state.generated?.settings?.nightCount === 0) {
       for(const type of ['patrol','guard']) {
         const previous=oldSettings[type+'Nights']||[];
-        state.settings[type+'Nights']=[...new Set([...previous,...state.settings[type+'Nights']])].sort((a,b)=>a-b);
+        const nextIndex=state.generated.nights.length;
+        state.settings[type+'Nights']=[...new Set([...previous.filter(i=>i!==nextIndex),...state.settings[type+'Nights']])].sort((a,b)=>a-b);
       }
     } else state.generated = null;
     sharedUrl='';
