@@ -860,6 +860,13 @@
     // Preserve historical nights unchanged in incremental mode.
     for (const night of bestPlan.slice(historical.length)) {
       const finalWarnings = [];
+      const extraShifts = eligible.map(person=>({
+        person, count:night.assignments.filter(a=>a.personId===person.id).length
+      })).filter(item=>item.count>2);
+      if (extraShifts.length) {
+        const names=extraShifts.map(({person,count})=>`${displayName(person)} (${count} pass)`).join(', ');
+        finalWarnings.push(`På grund av låg bemanning måste en del soldater ha tre pass per natt eller fler: ${names}. Kontrollera att vilan är tillräcklig.`);
+      }
       for (const row of night.rest) {
         if (row.longestRest < REST_TARGET_MINUTES) {
           const person = state.soldiers.find(p=>p.id===row.personId);
