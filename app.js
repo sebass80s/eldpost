@@ -443,13 +443,17 @@
       const badCounts=new Map(regular.map(p=>[p.id,0]));
       let repeated=0, restPenalty=0, excessShifts=0;
       const badNights=new Map(regular.map(p=>[p.id,[]]));
+      const shortRestNights=new Map(regular.map(p=>[p.id,[]]));
       for(const [nightIndex,night] of nights.entries()) {
         for(const p of soldiers) {
           const shifts=night.assignments.filter(a=>a.personId===p.id);
           const rest=maxRestGap(night.bounds,shifts);
           excessShifts+=Math.max(0,shifts.length-2)*1000000000;
           if(p.driver && rest<DRIVER_REST_MINUTES)return Infinity;
-          if(!p.driver && rest<REST_TARGET_MINUTES)restPenalty+=(REST_TARGET_MINUTES-rest)*300;
+          if(!p.driver) {
+            shortRestNights.get(p.id).push(rest<REST_TARGET_MINUTES);
+            if(rest<REST_TARGET_MINUTES)restPenalty+=100000000+(REST_TARGET_MINUTES-rest)*2000;
+          }
           if(!p.driver) {
             const bad=shifts.filter(a=>shiftQuality(a,night.bounds).bad).length;
             badCounts.set(p.id,(badCounts.get(p.id)||0)+bad);
@@ -470,7 +474,17 @@
         const mean=total/Math.max(1,daily.length);
         nightBalancePenalty+=daily.reduce((a,b)=>a+(b-mean)**2,0)*18000;
       }
-      return values.reduce((a,b)=>a+(b-average)**2,0)*140000 + repeated + nightBalancePenalty + restPenalty + excessShifts;
+      let shortRestFairness=0;
+      const counts=[];
+      for(const daily of shortRestNights.values()) {
+        const count=daily.filter(Boolean).length;
+        counts.push(count);
+        for(let i=1;i<daily.length;i++)
+          if(daily[i] && daily[i-1])shortRestFairness+=500000000;
+      }
+      const mean=counts.reduce((a,b)=>a+b,0)/Math.max(1,counts.length);
+      shortRestFairness+=counts.reduce((a,b)=>a+(b-mean)**2,0)*100000000;
+      return values.reduce((a,b)=>a+(b-average)**2,0)*140000 + repeated + nightBalancePenalty + restPenalty + shortRestFairness + excessShifts;
     }
     let current=score();
     for(let pass=0;pass<18;pass++) {
