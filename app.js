@@ -150,7 +150,7 @@
       place.value = String(soldier.sleepPlace);
       driver.checked = !!soldier.driver; pc.checked = !!soldier.pc; stf.checked = !!soldier.stf; excluded.checked = !!soldier.excluded;
 
-      name.addEventListener('input', () => { soldier.name = name.value; invalidateGenerated(); renderTentMaps(); });
+      name.addEventListener('input', () => { soldier.name = name.value; invalidateGenerated(); renderTentMaps(); validateUniqueNames(); });
       place.addEventListener('change', () => {
         const target = Number(place.value); const previous = soldier.sleepPlace;
         const other = state.soldiers.find(s => s.id !== soldier.id && s.sleepPlace === target);
@@ -163,6 +163,31 @@
       excluded.addEventListener('change', () => { soldier.excluded = excluded.checked; invalidateGenerated(); renderTentMaps(); });
       els.soldierList.appendChild(node);
     });
+    validateUniqueNames();
+  }
+
+  function normalizeName(value) { return (value || '').trim().replace(/\\s+/g, ' ').toLocaleLowerCase('sv-SE'); }
+
+  function validateUniqueNames() {
+    const counts = new Map();
+    for (const soldier of state.soldiers) {
+      const key = normalizeName(soldier.name);
+      if (key) counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    let duplicated = false;
+    for (const row of els.soldierList.querySelectorAll('.soldier-card')) {
+      const soldier = state.soldiers.find(p => p.id === row.dataset.id);
+      const input = row.querySelector('.soldier-name');
+      const key = normalizeName(soldier?.name);
+      const isDuplicate = !!key && counts.get(key) > 1;
+      input.classList.toggle('duplicate-name', isDuplicate);
+      input.setAttribute('aria-invalid', String(isDuplicate));
+      input.setCustomValidity(isDuplicate ? 'Namnet används redan på en annan sovplats.' : '');
+      duplicated ||= isDuplicate;
+    }
+    els.generateButton.disabled = duplicated;
+    els.generateMessage.textContent = duplicated ? 'Samma namn förekommer flera gånger. Ändra de markerade namnen.' : '';
+    return !duplicated;
   }
 
   function invalidateGenerated() {
@@ -297,7 +322,7 @@
     if (eligible.length < 1) errors.push('Minst en person måste kunna sitta eldpost.');
     if (s.patrolEnabled && state.soldiers.filter(canTakePatrol).length < 2) errors.push('Minst två personer måste kunna gå patrull.');
     const names = state.soldiers.map(p => (p.name || '').trim()).filter(Boolean);
-    if (new Set(names.map(n => n.toLocaleLowerCase('sv'))).size !== names.length) errors.push('Två personer har samma namn. Gör namnen unika.');
+    if (new Set(names.map(normalizeName)).size !== names.length) errors.push('Två personer har samma namn. Gör namnen unika.');
     const places = state.soldiers.map(p => p.sleepPlace);
     if (new Set(places).size !== state.soldiers.length) errors.push('Varje person måste ha en unik sovplats.');
     return errors;
