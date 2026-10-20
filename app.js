@@ -496,6 +496,8 @@
   }
 
   const IMPOSSIBLE_MESSAGE = 'Det är matematiskt omöjligt att bemanna detta schema. Kontakta din chef';
+  const SEARCH_LIMIT_MESSAGE = 'Schemaläggaren kunde inte hitta en fullständig bemanning inom sökgränsen. Prova att ändra tider eller bemanning och försök igen.';
+  let searchLimitReached = false;
 
   function expectedDutySlots(settings, index, fireWindow, patrolWindow, guardWindow) {
     const jobs = makeSlots(fireWindow,settings.fireDuration,'fire').map(slot=>({...slot, people:1}));
@@ -524,11 +526,15 @@
     const rows=[];
     const maxNodes=120000;
     let visited=0;
+    let limitReached=false;
+    const failedStates=new Set();
     const order=[...jobs].sort((a,b)=>a.start-b.start || b.people-a.people);
     function search(pos) {
       if(pos===order.length)return true;
-      if(++visited>maxNodes)return false;
+      if(++visited>maxNodes){limitReached=true;return false;}
       const job=order[pos], people=poolByType[job.type];
+      const key=pos+'|'+soldiers.map(p=>assigned.get(p.id).map(a=>a.start+':'+a.end).join(',')).join('|');
+      if(failedStates.has(key))return false;
       const ranked=people.filter(p=>{
         const existing=assigned.get(p.id);
         if(existing.some(a=>overlaps(a,job)))return false;
@@ -562,9 +568,14 @@
         }
         return false;
       }
-      return pick(0,0);
+      const found=pick(0,0);
+      if(!found && !limitReached)failedStates.add(key);
+      return found;
     }
-    if(!search(0))return null;
+    if(!search(0)){
+      if(limitReached)searchLimitReached=true;
+      return null;
+    }
     return rows;
   }
 
@@ -575,6 +586,7 @@
     els.generateMessage.textContent = '';
 
     const s = state.settings;
+    searchLimitReached=false;
     const historical = s.nightCount === 0 && state.generated?.settings?.nightCount === 0 ? state.generated.nights : [];
     const targetNightCount = s.nightCount === 0 ? historical.length + 1 : s.nightCount;
     const fireRaw = parseClock(s.fireStart);
@@ -775,7 +787,7 @@
     if (!bestPlan) {
       state.generated = null;
       els.resultSection.classList.add('hidden');
-      els.generateMessage.textContent = IMPOSSIBLE_MESSAGE;
+      els.generateMessage.textContent = searchLimitReached ? SEARCH_LIMIT_MESSAGE : IMPOSSIBLE_MESSAGE;
       saveStateSoon();
       return;
     }
