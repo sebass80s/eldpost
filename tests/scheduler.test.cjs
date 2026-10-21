@@ -152,3 +152,19 @@ test('drivers may receive difficult shifts but always retain six consecutive hou
   for(const night of plan.nights) for(const p of drivers)
     assert.ok(night.rest.find(r=>r.personId===p.id).longestRest>=360);
 });
+
+test('marked onions receive the majority of difficult shifts without breaking rest',()=>{
+  const st=state({size:10,nights:3,patrolPeople:1});
+  for(const p of st.soldiers) p.onion=['s4','s5','s6'].includes(p.id);
+  const {plan,error}=run(st);
+  assert.ok(plan,error);
+  assertSafe(plan,st);
+  const bad=person=>plan.nights.reduce((n,night)=>n+night.assignments.filter(a=>
+    a.personId===person.id && a.start%1440>=120 && a.start%1440<300).length,0);
+  const onionBad=st.soldiers.filter(p=>p.onion).reduce((n,p)=>n+bad(p),0);
+  const allBad=st.soldiers.reduce((n,p)=>n+bad(p),0);
+  assert.ok(onionBad>allBad/2,'Marked onions should receive most difficult shifts');
+  for(const night of plan.nights) for(const p of st.soldiers)
+    assert.ok(night.assignments.filter(a=>a.personId===p.id).length<=2,
+      'Onion priority must not create extra shifts in normal staffing');
+});
