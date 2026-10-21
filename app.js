@@ -345,6 +345,12 @@
     return slots;
   }
 
+  function patrolOrderValid(shifts) {
+    const fires=shifts.filter(a=>a.type==='fire');
+    const patrols=shifts.filter(a=>a.type==='patrol');
+    return !fires.length || !patrols.length || Math.max(...fires.map(a=>a.end))<=Math.min(...patrols.map(a=>a.start));
+  }
+
   function overlaps(a, b) { return a.start < b.end && b.start < a.end; }
 
   function mergeIntervals(intervals) {
@@ -394,6 +400,7 @@
       if (interrupted && state.settings.guardEnabled && !allowShortRest) continue;
       if (proposed.some(p => existing.some(e => overlaps(p, e)))) continue;
       const all = [...existing, ...proposed];
+      if (!patrolOrderValid(all)) continue;
       const longest = maxRestGap(bounds, all);
       if (person.driver && longest < DRIVER_REST_MINUTES) continue;
       if (!allowShortRest && longest < REST_TARGET_MINUTES) continue;
@@ -506,7 +513,7 @@
             if(person.id===old.id || !allowed(person,a.type))continue;
             const target=rows.filter((x,j)=>j!==i && x.personId===person.id);
             if(target.length>=maxShifts || target.filter(x=>x.type===a.type).length>=typeLimit(a.type))continue;
-            if(target.some(x=>overlaps(x,a)))continue;
+            if(target.some(x=>overlaps(x,a)) || !patrolOrderValid([...target,a]))continue;
             a.personId=person.id;
             const value=score();
             a.personId=old.id;
@@ -527,6 +534,7 @@
           const firstOther=rows.filter((x,k)=>k!==i && k!==j && x.personId===first.id);
           const secondOther=rows.filter((x,k)=>k!==i && k!==j && x.personId===second.id);
           if(firstOther.some(x=>overlaps(x,b)) || secondOther.some(x=>overlaps(x,a)))continue;
+          if(!patrolOrderValid([...firstOther,b]) || !patrolOrderValid([...secondOther,a]))continue;
           if(firstOther.filter(x=>x.type===b.type).length>=typeLimit(b.type) || secondOther.filter(x=>x.type===a.type).length>=typeLimit(a.type))continue;
           a.personId=second.id;b.personId=first.id;
           const value=score();
@@ -612,6 +620,7 @@
         if(existing.length >= maxShifts) return false;
         if(existing.filter(a=>a.type===job.type).length >= maxByType[job.type]) return false;
         if(existing.some(a=>overlaps(a,job)))return false;
+        if(!patrolOrderValid([...existing,job]))return false;
         return !p.driver || maxRestGap(bounds,[...existing,job])>=DRIVER_REST_MINUTES;
       }).sort((a,b)=>{
         const weight=p=>{
