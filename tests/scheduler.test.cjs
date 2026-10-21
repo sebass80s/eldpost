@@ -61,6 +61,7 @@ for(const size of [6,8,10,12,16]) for(const nights of [1,3]) for(const patrolPeo
     test(`normal: ${size} people, ${nights} nights, ${patrolPeople} patrol, ${mode}`,()=>{
       const st=state({size,nights,patrolPeople,mode});
       const {plan,error}=run(st);
+      if(size*2 < 8*(1+patrolPeople)) {assert.equal(plan,null);assert.ok(error);return;}
       assert.ok(plan,error);
       assertSafe(plan,st);
       const counts=st.soldiers.filter(p=>!p.driver).map(p=>plan.nights.reduce((n,night)=>
@@ -89,30 +90,11 @@ test('impossible small team does not publish incomplete schedule',()=>{
   assert.ok(error.length>0);
 });
 
-test('heavy patrol coverage never gives more than three shifts per person',()=>{
+test('heavy patrol cannot break contiguous two-shift rule',()=>{
   const st=state({size:10,nights:3,patrolPeople:2});
   const {plan,error}=run(st);
-  assert.ok(plan,error);
-  assertSafe(plan,st);
-  for(const night of plan.nights) for(const p of st.soldiers) {
-    const shifts=night.assignments.filter(a=>a.personId===p.id);
-    assert.ok(shifts.length<=3,'No soldier may receive four or more shifts in one night');
-    for(const type of ['fire','patrol','guard'])
-      assert.ok(shifts.filter(a=>a.type===type).length<=2,'At most two shifts of the same kind');
-  }
-});
-
-test('warns when low staffing requires more than two shifts',()=>{
-  const st=state({size:10,nights:3,patrolPeople:2});
-  const {plan,error}=run(st);
-  assert.ok(plan,error);
-  assertSafe(plan,st);
-  for(const night of plan.nights){
-    const overloaded=st.soldiers.filter(p=>night.assignments.filter(a=>a.personId===p.id).length>2);
-    assert.ok(overloaded.length>0,'This scenario requires more than two shifts per person');
-    assert.ok(night.warnings.some(w=>w.includes('På grund av låg bemanning måste en del soldater ha tre pass per natt')),
-      'Must display the staffing exception warning');
-  }
+  assert.equal(plan,null);
+  assert.ok(error);
 });
 
 test('normal ten-person fire and single patrol fits two-shift limit fairly',()=>{
@@ -128,18 +110,6 @@ test('normal ten-person fire and single patrol fits two-shift limit fairly',()=>
   assert.ok(Math.max(...counts)-Math.min(...counts)<=1,'Bad shifts must be shared as equally as possible');
 });
 
-test('short rest rotates rather than repeating on consecutive nights in heavy standard setup',()=>{
-  const st=state({size:10,nights:3,patrolPeople:2});
-  const {plan,error}=run(st);
-  assert.ok(plan,error);
-  assertSafe(plan,st);
-  for(const p of st.soldiers.filter(p=>!p.driver)) {
-    const short=plan.nights.map(n=>n.rest.find(r=>r.personId===p.id).longestRest<240);
-    for(let i=1;i<short.length;i++)
-      assert.ok(!(short[i] && short[i-1]),'The same soldier should not get short rest on consecutive nights in this scenario');
-  }
-});
-
 test('drivers may receive difficult shifts but always retain six consecutive hours of rest',()=>{
   const st=state({size:10,nights:3,patrolPeople:1});
   const {plan,error}=run(st);
@@ -153,19 +123,20 @@ test('drivers may receive difficult shifts but always retain six consecutive hou
     assert.ok(night.rest.find(r=>r.personId===p.id).longestRest>=360);
 });
 
-test('a soldier never patrols before their fire-watch shift',()=>{
-  for(const mode of ['independent','linked']) for(const patrolPeople of [1,2]){
-    const st=state({size:10,nights:3,patrolPeople,mode});
+test('fire followed immediately by patrol is the only valid two-shift pairing',()=>{
+  for(const mode of ['independent','linked']) {
+    const st=state({size:10,nights:3,patrolPeople:1,mode});
     const {plan,error}=run(st);
     assert.ok(plan,error);
     assertSafe(plan,st);
     for(const night of plan.nights)for(const p of st.soldiers){
-      const shifts=night.assignments.filter(a=>a.personId===p.id);
-      const fires=shifts.filter(a=>a.type==='fire');
-      const patrols=shifts.filter(a=>a.type==='patrol');
-      if(fires.length&&patrols.length)
-        assert.ok(Math.max(...fires.map(a=>a.end))<=Math.min(...patrols.map(a=>a.start)),
-          'All fire-watch shifts must finish before patrol');
+      const shifts=night.assignments.filter(a=>a.personId===p.id).sort((a,b)=>a.start-b.start);
+      assert.ok(shifts.length<=2);
+      if(shifts.length===2) {
+        assert.equal(shifts[0].type,'fire');
+        assert.equal(shifts[1].type,'patrol');
+        assert.equal(shifts[0].end,shifts[1].start);
+      }
     }
   }
 });
