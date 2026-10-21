@@ -346,12 +346,22 @@
   }
 
   function patrolOrderValid(shifts) {
-    const fires=shifts.filter(a=>a.type==='fire');
-    const patrols=shifts.filter(a=>a.type==='patrol');
-    return !fires.length || !patrols.length || Math.max(...fires.map(a=>a.end))<=Math.min(...patrols.map(a=>a.start));
+    // Normalfall: ett sammanhängande block, antingen ett pass eller
+    // eldpost direkt följt av patrull. Aldrig två pass av samma slag.
+    // Vaktpostupplägg hanteras separat.
+    if (state.settings.guardEnabled) {
+      const fires=shifts.filter(a=>a.type==='fire');
+      const patrols=shifts.filter(a=>a.type==='patrol');
+      return !fires.length || !patrols.length || Math.max(...fires.map(a=>a.end))<=Math.min(...patrols.map(a=>a.start));
+    }
+    if (shifts.length > 2) return false;
+    if (shifts.filter(a=>a.type==='fire').length > 1 || shifts.filter(a=>a.type==='patrol').length > 1) return false;
+    if (shifts.length < 2) return true;
+    const [first,second]=[...shifts].sort((a,b)=>a.start-b.start);
+    return first.type==='fire' && second.type==='patrol' && first.end===second.start;
   }
 
-  function overlaps(a, b) { return a.start < b.end && b.start < a.end; }
+    function overlaps(a, b) { return a.start < b.end && b.start < a.end; }
 
   function mergeIntervals(intervals) {
     if (!intervals.length) return [];
@@ -512,7 +522,7 @@
           for(const person of regular) {
             if(person.id===old.id || !allowed(person,a.type))continue;
             const target=rows.filter((x,j)=>j!==i && x.personId===person.id);
-            if(target.length>=maxShifts || target.filter(x=>x.type===a.type).length>=typeLimit(a.type))continue;
+            if(target.length>=(state.settings.guardEnabled?maxShifts:2) || target.filter(x=>x.type===a.type).length>=(state.settings.guardEnabled?typeLimit(a.type):1))continue;
             if(target.some(x=>overlaps(x,a)) || !patrolOrderValid([...target,a]))continue;
             a.personId=person.id;
             const value=score();
@@ -535,7 +545,7 @@
           const secondOther=rows.filter((x,k)=>k!==i && k!==j && x.personId===second.id);
           if(firstOther.some(x=>overlaps(x,b)) || secondOther.some(x=>overlaps(x,a)))continue;
           if(!patrolOrderValid([...firstOther,b]) || !patrolOrderValid([...secondOther,a]))continue;
-          if(firstOther.filter(x=>x.type===b.type).length>=typeLimit(b.type) || secondOther.filter(x=>x.type===a.type).length>=typeLimit(a.type))continue;
+          if(firstOther.filter(x=>x.type===b.type).length>=(state.settings.guardEnabled?typeLimit(b.type):1) || secondOther.filter(x=>x.type===a.type).length>=(state.settings.guardEnabled?typeLimit(a.type):1))continue;
           a.personId=second.id;b.personId=first.id;
           const value=score();
           a.personId=first.id;b.personId=second.id;
@@ -617,8 +627,8 @@
         const existing=assigned.get(p.id);
         // Reservsökningen får aldrig stapla obegränsat många pass på en soldat.
         // Tre behövs i belastade nattupplägg med fler personpass än två per person.
-        if(existing.length >= maxShifts) return false;
-        if(existing.filter(a=>a.type===job.type).length >= maxByType[job.type]) return false;
+        if(existing.length >= (state.settings.guardEnabled ? maxShifts : 2)) return false;
+        if(existing.filter(a=>a.type===job.type).length >= (state.settings.guardEnabled ? maxByType[job.type] : 1)) return false;
         if(existing.some(a=>overlaps(a,job)))return false;
         if(!patrolOrderValid([...existing,job]))return false;
         return !p.driver || maxRestGap(bounds,[...existing,job])>=DRIVER_REST_MINUTES;
