@@ -168,3 +168,20 @@ test('marked onions receive the majority of difficult shifts without breaking re
     assert.ok(night.assignments.filter(a=>a.personId===p.id).length<=2,
       'Onion priority must not create extra shifts in normal staffing');
 });
+
+test('a soldier never patrols before their fire-watch shift',()=>{
+  for(const mode of ['independent','linked']) for(const patrolPeople of [1,2]){
+    const st=state({size:10,nights:3,patrolPeople,mode});
+    const {plan,error}=run(st);
+    assert.ok(plan,error);
+    assertSafe(plan,st);
+    for(const night of plan.nights)for(const p of st.soldiers){
+      const shifts=night.assignments.filter(a=>a.personId===p.id);
+      const fires=shifts.filter(a=>a.type==='fire');
+      const patrols=shifts.filter(a=>a.type==='patrol');
+      if(fires.length&&patrols.length)
+        assert.ok(Math.max(...fires.map(a=>a.end))<=Math.min(...patrols.map(a=>a.start)),
+          'All fire-watch shifts must finish before patrol');
+    }
+  }
+});
