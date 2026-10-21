@@ -596,6 +596,8 @@
     const nonDrivers=soldiers.filter(p=>!p.driver && !p.excluded).length;
     const drivers=soldiers.filter(p=>p.driver && !p.excluded).length;
     const totalDemand=jobs.reduce((sum,j)=>sum+j.people,0);
+    // With contiguous fire -> patrol blocks and no duplicate duty types, nobody can take more than two slots.
+    if (!state.settings.guardEnabled && totalDemand > soldiers.filter(p=>canTakeFire(p)||canTakePatrol(p)).length*2) return null;
     // Skip strict search when two assignments per eligible person cannot cover demand.
     if(strictTwo && totalDemand>soldiers.filter(p=>poolByType.fire.includes(p)||poolByType.patrol.includes(p)||poolByType.guard.includes(p)).length*2) return null;
     const maxShifts=strictTwo ? 2 : Math.max(3,Math.ceil((totalDemand-drivers)/Math.max(1,nonDrivers)));
@@ -685,6 +687,10 @@
       end: Math.max(fireWindow.end, patrolWindow?.end ?? -Infinity, guardWindow?.end ?? -Infinity)
     };
     const eligible = state.soldiers.filter(p => canTakeFire(p) || canTakePatrol(p) || canTakeGuard(p));
+    if (!s.guardEnabled && s.patrolEnabled && Array.from({length:targetNightCount-historical.length},(_,i)=>i+historical.length).some(i=>dutyEnabledOnNight(s,'patrol',i) && makeSlots(fireWindow,s.fireDuration,'fire').length+makeSlots(patrolWindow,s.patrolDuration,'patrol').length*s.patrolPeople>eligible.length*2)) {
+      els.generateMessage.textContent=IMPOSSIBLE_MESSAGE;
+      return;
+    }
     const fireEligible = state.soldiers.filter(canTakeFire);
     const patrolEligible = state.soldiers.filter(canTakePatrol);
     const guardEligible = state.soldiers.filter(canTakeGuard);
