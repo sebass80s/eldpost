@@ -34,7 +34,7 @@
   }
 
   function makeSoldier(index) {
-    return { id: crypto.randomUUID ? crypto.randomUUID() : `s-${Date.now()}-${index}`, name: '', sleepPlace: index + 1, driver: false, pc: false, stf: false, onion: false, excluded: false };
+    return { id: crypto.randomUUID ? crypto.randomUUID() : `s-${Date.now()}-${index}`, name: '', sleepPlace: index + 1, driver: false, pc: false, stf: false, excluded: false };
   }
 
   function makeDefaultState() {
@@ -196,13 +196,12 @@
       const driver = node.querySelector('.role-driver');
       const pc = node.querySelector('.role-pc');
       const stf = node.querySelector('.role-stf');
-      const onion = node.querySelector('.role-onion');
       const excluded = node.querySelector('.role-excluded');
       badge.textContent = soldier.sleepPlace;
       name.value = soldier.name;
       for (let p = 1; p <= state.soldiers.length; p++) place.add(new Option(`Plats ${p}`, String(p)));
       place.value = String(soldier.sleepPlace);
-      driver.checked = !!soldier.driver; pc.checked = !!soldier.pc; stf.checked = !!soldier.stf; onion.checked = !!soldier.onion; excluded.checked = !!soldier.excluded;
+      driver.checked = !!soldier.driver; pc.checked = !!soldier.pc; stf.checked = !!soldier.stf; excluded.checked = !!soldier.excluded;
 
       name.addEventListener('input', () => { soldier.name = name.value; invalidateGenerated(); renderTentMaps(); validateUniqueNames(); });
       place.addEventListener('change', () => {
@@ -214,7 +213,6 @@
       driver.addEventListener('change', () => { soldier.driver = driver.checked; invalidateGenerated(); renderTentMaps(); });
       pc.addEventListener('change', () => { soldier.pc = pc.checked; if (pc.checked) soldier.stf = false; invalidateGenerated(); renderSoldiers(); renderTentMaps(); });
       stf.addEventListener('change', () => { soldier.stf = stf.checked; if (stf.checked) soldier.pc = false; invalidateGenerated(); renderSoldiers(); renderTentMaps(); });
-      onion.addEventListener('change', () => { soldier.onion = onion.checked; invalidateGenerated(); });
       excluded.addEventListener('change', () => { soldier.excluded = excluded.checked; invalidateGenerated(); renderTentMaps(); });
       els.soldierList.appendChild(node);
     });
@@ -430,11 +428,10 @@
       const good = proposed.filter(p=>shiftQuality(p,bounds).good).length;
       const finalPatrol = proposed.some(p => p.type === 'patrol' && p.end === makeWindow(state.settings.patrolStart, state.settings.patrolEnd, parseClock(state.settings.fireStart))?.end);
       const lateDriver = 0; // Inget särskilt tidspreferenskrav för förare.
-      const onionPriority = bad && state.soldiers.some(p=>p.onion && !p.excluded) && !person.onion ? 200000*bad : 0;
       const badPenalty = bad * (quality.bad * 650 + (quality.lastBad?1200:0) + (existing.some(p=>shiftQuality(p,bounds).bad)?850:0));
       const driverBadPenalty = 0; // Förare får skitpass om sex timmars sammanhängande vila uppfylls.
       const goodPenalty = good * quality.good * 230;
-      const score = hist * .28 + (historyRest.get(person.id) || 0) * .45 + minutes * .22 + clusters * 20 + burden * .23 + rotation * .8 + tie * 90 + shortRestPenalty + dutyBalancePenalty + interruptedPenalty + badPenalty + goodPenalty + lateDriver + driverBadPenalty + onionPriority;
+      const score = hist * .28 + (historyRest.get(person.id) || 0) * .45 + minutes * .22 + clusters * 20 + burden * .23 + rotation * .8 + tie * 90 + shortRestPenalty + dutyBalancePenalty + interruptedPenalty + badPenalty + goodPenalty + lateDriver + driverBadPenalty;
       if (!best || score < best.score) best = { person, proposed, score };
     }
     return best;
@@ -482,9 +479,7 @@
           }
         }
       }
-      const onionPeople=regular.filter(p=>p.onion);
-      const nonOnionBad=onionPeople.length ? regular.filter(p=>!p.onion).reduce((n,p)=>n+(badCounts.get(p.id)||0),0) : 0;
-      const values=(onionPeople.length?onionPeople:regular).map(p=>badCounts.get(p.id)||0);
+      const values=regular.map(p=>badCounts.get(p.id)||0);
       const average=values.reduce((a,b)=>a+b,0)/Math.max(1,values.length);
       let nightBalancePenalty=0;
       for(const daily of badNights.values()) {
@@ -506,7 +501,7 @@
       }
       const mean=counts.reduce((a,b)=>a+b,0)/Math.max(1,counts.length);
       shortRestFairness+=counts.reduce((a,b)=>a+(b-mean)**2,0)*100000000;
-      return values.reduce((a,b)=>a+(b-average)**2,0)*140000 + repeated + nightBalancePenalty + restPenalty + shortRestFairness + excessShifts + nonOnionBad*3000000;
+      return values.reduce((a,b)=>a+(b-average)**2,0)*140000 + repeated + nightBalancePenalty + restPenalty + shortRestFairness + excessShifts;
     }
     let current=score();
     for(let pass=0;pass<18;pass++) {
@@ -641,7 +636,6 @@
           const shiftCount=prior.length;
           return shiftCount*900 + (bounds.end-bounds.start-rest)*1.7 +
             (q.bad?recent.bad*380:0) + (q.good?recent.good*95:0) +
-            (q.bad && soldiers.some(x=>x.onion&&!x.excluded) && !p.onion ? 200000 : 0) +
             recent.load*.15 + (p.driver && !(job.type === 'patrol' && job.end === makeWindow(state.settings.patrolStart,state.settings.patrolEnd,parseClock(state.settings.fireStart))?.end) ? Math.max(0,job.start-bounds.start)*4 : 0) +
             ((soldiers.indexOf(p)*31+trial*17+pos*13)%37);
         };
@@ -864,9 +858,7 @@
       good:nights.reduce((sum,n)=>sum+n.assignments.filter(a=>a.personId===p.id&&shiftQuality(a,n.bounds).good).length,0)
     }));
     for (const key of ['bad','good']) {
-      const onionEligible=eligible.filter(p=>p.onion && !p.excluded);
-      const qualityPool=key==='bad' && onionEligible.length ? qualityTotals.filter((_,i)=>eligible[i].onion) : qualityTotals;
-      if(key==='bad' && onionEligible.length) score+=qualityTotals.reduce((sum,q,i)=>sum+(!eligible[i].onion ? q.bad*30000000 : 0),0);
+      const qualityPool=qualityTotals;
       const avg=qualityPool.reduce((sum,p)=>sum+p[key],0)/Math.max(1,qualityPool.length);
       score += qualityPool.reduce((sum,p)=>sum+(p[key]-avg)**2,0)*(key==='bad'?250000:35000);
     }
