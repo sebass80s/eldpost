@@ -468,6 +468,7 @@
           const shifts=night.assignments.filter(a=>a.personId===p.id);
           const rest=maxRestGap(night.bounds,shifts);
           excessShifts+=Math.max(0,shifts.length-2)*1000000000;
+          if(p.excluded)continue;
           if(p.driver && rest<DRIVER_REST_MINUTES)return Infinity;
           if(!p.driver) {
             shortRestNights.get(p.id).push(rest<REST_TARGET_MINUTES);
