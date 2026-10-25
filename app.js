@@ -711,6 +711,7 @@
       for(const p of eligible) {
         const duties=previous.assignments.filter(a=>a.personId===p.id);
         const rest=previous.rest.find(r=>r.personId===p.id);
+        if (!rest && duties.length===0) continue; // Nya soldater får ingen påhittad tidigare belastning.
         const quality=qualityHistory.get(p.id);
         const bad=duties.filter(d=>shiftQuality(d,previous.bounds).bad).length;
         quality.bad+=bad; quality.good+=duties.filter(d=>shiftQuality(d,previous.bounds).good).length;
