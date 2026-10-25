@@ -16,7 +16,7 @@
     guardEnabled: $('guardEnabled'), guardStart: $('guardStart'), guardEnd: $('guardEnd'), guardDuration: $('guardDuration'), guardFields: $('guardFields'), guardNights: $('guardNights'), guardPeople: $('guardPeople'),
     allowPcFire: $('allowPcFire'), allowPcPatrol: $('allowPcPatrol'), allowStfFire: $('allowStfFire'), allowStfPatrol: $('allowStfPatrol'),
     tentMap: $('tentMap'), generateButton: $('generateButton'), generateMessage: $('generateMessage'), resetButton: $('resetButton'),
-    resultSection: $('resultSection'), resultTitle: $('resultTitle'), nightTabs: $('nightTabs'), scheduleWarnings: $('scheduleWarnings'), scheduleTable: $('scheduleTable'), restSummary: $('restSummary'), resultTentMap: $('resultTentMap'), copyButton: $('copyButton'),
+    changeStaffingButton: $('changeStaffingButton'), resultSection: $('resultSection'), resultTitle: $('resultTitle'), nightTabs: $('nightTabs'), scheduleWarnings: $('scheduleWarnings'), scheduleTable: $('scheduleTable'), restSummary: $('restSummary'), resultTentMap: $('resultTentMap'), copyButton: $('copyButton'),
     shareButton: $('shareButton'), sharePanel: $('sharePanel'), shareUrl: $('shareUrl'), shareCopyButton: $('shareCopyButton'), nativeShareButton: $('nativeShareButton'), shareQr: $('shareQr'), shareQrHelp: $('shareQrHelp'), shareStatus: $('shareStatus'),
     soldierTemplate: $('soldierTemplate')
   };
@@ -57,6 +57,7 @@
       const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
       if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.soldiers)) return null;
       parsed.settings ||= {};
+      parsed.lockedNights = Math.max(0, Math.min(Number(parsed.lockedNights)||0, parsed.generated?.nights?.length||0));
       if (![1,2].includes(Number(parsed.settings.guardPeople))) parsed.settings.guardPeople=2;
       if (!['linked','independent'].includes(parsed.settings.patrolMode)) parsed.settings.patrolMode='linked';
       if (![1,2].includes(Number(parsed.settings.patrolPeople))) parsed.settings.patrolPeople=2;
@@ -114,7 +115,7 @@
         const nextIndex=state.generated.nights.length;
         state.settings[type+'Nights']=[...new Set([...previous.filter(i=>i!==nextIndex),...state.settings[type+'Nights']])].sort((a,b)=>a-b);
       }
-    } else state.generated = null;
+    } else if (!state.lockedNights) state.generated = null;
     sharedUrl='';
     els.sharePanel.classList.add('hidden');
     updateCombinedDutyWarning();
@@ -165,10 +166,11 @@
     if (count > old) {
       for (let i = old; i < count; i++) state.soldiers.push(makeSoldier(i));
     } else if (count < old) {
+      if(state.lockedNights) { alert('Behåll historiken: markera den som lämnat som Ej schema i stället för att minska antalet soldater.'); els.soldierCount.value=String(old); return; }
       state.soldiers = state.soldiers.slice(0, count);
     }
     normalizeSleepPlaces();
-    state.generated = null;
+    if (!state.lockedNights) state.generated = null;
     sharedUrl=''; els.sharePanel.classList.add('hidden');
     renderSoldiers(); renderTentMaps(); updateSmallTeamWarning(); saveStateSoon();
   }
@@ -249,7 +251,7 @@
   }
 
   function invalidateGenerated() {
-    state.generated = null;
+    if (!state.lockedNights) state.generated = null;
     sharedUrl = '';
     els.sharePanel.classList.add('hidden');
     els.resultSection.classList.add('hidden');
@@ -676,8 +678,11 @@
 
     const s = state.settings;
     searchLimitReached=false;
-    const historical = s.nightCount === 0 && state.generated?.settings?.nightCount === 0 ? state.generated.nights : [];
+    const historical = state.lockedNights > 0 && state.generated?.nights
+      ? state.generated.nights.slice(0,state.lockedNights)
+      : s.nightCount === 0 && state.generated?.settings?.nightCount === 0 ? state.generated.nights : [];
     const targetNightCount = s.nightCount === 0 ? historical.length + 1 : s.nightCount;
+    if (targetNightCount <= historical.length) { els.generateMessage.textContent='Välj fler nätter än de redan låsta.'; return; }
     const fireRaw = parseClock(s.fireStart);
     const fireWindow = makeWindow(s.fireStart, s.fireEnd, fireRaw);
     const patrolWindow = s.patrolEnabled ? makeWindow(s.patrolStart, s.patrolEnd, fireRaw) : null;
@@ -1130,12 +1135,31 @@
     }else {await copyShareLink();}
   }
 
-  function bindEvents() {
+  function changeStaffingMidExercise() {
+    const count=state.generated?.nights?.length||0;
+    if(count<2) { alert('Generera ett schema med minst två nätter först.'); return; }
+    const answer=prompt(`Hur många nätter är GENOMFÖRDA? (1–${count-1})\\nDe låses och sparas. Bara kommande nätter räknas om.`,String(state.lockedNights||1));
+    if(answer===null)return;
+    if(!/^\\d+$/.test(answer.trim()) || Number(answer)<1 || Number(answer)>=count) {
+      alert(`Ange ett heltal mellan 1 och ${count-1}.`);return;
+    }
+    state.lockedNights=Number(answer);
+    state.generated.nights=state.generated.nights.slice(0,state.lockedNights);
+    state.generated.settings.nightCount=state.settings.nightCount;
+    els.generateMessage.textContent=`Natt 1–${state.lockedNights} är låsta. Markera avgångna som Ej schema, eller öka antal soldater och fyll i nytillkomna. Klicka sedan Generera schema.`;
+    els.generateButton.textContent='Räkna om återstående nätter';
+    sharedUrl='';els.sharePanel.classList.add('hidden');
+    activeNight=Math.max(0,state.lockedNights-1);totalView=false;
+    renderResults();saveStateSoon();
+  }
+
+    function bindEvents() {
     els.soldierCount.addEventListener('change', () => resizeSoldierList(Number(els.soldierCount.value)));
     els.nightCount.addEventListener('change', () => { renderDutyNightChoices(); readSettingsFromControls(); });
     [els.startDate, els.fireStart, els.fireEnd, els.fireDuration, els.patrolStart, els.patrolEnd, els.patrolDuration, els.patrolMode, els.patrolPeople, els.guardStart, els.guardEnd, els.guardDuration, els.guardPeople].forEach(el => el.addEventListener('change', () => { readSettingsFromControls(); els.resultSection.classList.add('hidden'); }));
     [els.patrolEnabled, els.guardEnabled, els.allowPcFire, els.allowPcPatrol, els.allowStfFire, els.allowStfPatrol].forEach(el => el.addEventListener('change', () => { updateOptionalFields(); readSettingsFromControls(); els.resultSection.classList.add('hidden'); }));
     els.generateButton.addEventListener('click', generatePlan);
+    els.changeStaffingButton.addEventListener('click',changeStaffingMidExercise);
     els.nightCount.addEventListener('change',()=>{els.generateButton.textContent=els.nightCount.value==='0'?'Generera nästa natt':'Generera schema';});
     els.copyButton.addEventListener('click', copyCurrentNight);
     els.shareButton.addEventListener('click', makeShareLink);
@@ -1148,7 +1172,8 @@
   }
 
   initOptions(); syncControlsFromState();
-  if(state.settings.nightCount===0) els.generateButton.textContent='Generera nästa natt'; renderSoldiers(); renderTentMaps(); bindEvents();
+  if(state.lockedNights) els.generateButton.textContent='Räkna om återstående nätter';
+  else if(state.settings.nightCount===0) els.generateButton.textContent='Generera nästa natt'; renderSoldiers(); renderTentMaps(); bindEvents();
   if (state.generated?.nights?.length) { els.resultSection.classList.remove('hidden'); renderResults(); }
   if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 })();
