@@ -140,3 +140,39 @@ test('fire followed immediately by patrol is the only valid two-shift pairing',(
     }
   }
 });
+
+test('mid-exercise removal preserves completed nights and excludes departed soldiers',()=>{
+  const run=scheduler();
+  const st=state({size:10,nights:3,patrolPeople:1});
+  const initial=run(st);
+  assert.ok(initial.plan,initial.error);
+  const completed=JSON.stringify(initial.plan.nights[0]);
+  st.lockedNights=1;
+  st.generated=initial.plan;
+  const departed=st.soldiers[9];
+  departed.excluded=true;
+  const updated=run(st);
+  assert.ok(updated.plan,updated.error);
+  assert.equal(JSON.stringify(updated.plan.nights[0]),completed,'Completed night must not change');
+  assert.equal(updated.plan.nights.length,3);
+  for(const night of updated.plan.nights.slice(1)){
+    assert.equal(night.assignments.length,16);
+    assert.ok(night.assignments.every(a=>a.personId!==departed.id));
+  }
+});
+
+test('mid-exercise newcomer starts with no historical duty while prior nights stay unchanged',()=>{
+  const run=scheduler();
+  const st=state({size:10,nights:3,patrolPeople:1});
+  const initial=run(st);
+  assert.ok(initial.plan,initial.error);
+  const completed=JSON.stringify(initial.plan.nights[0]);
+  st.lockedNights=1;
+  st.generated=initial.plan;
+  st.soldiers.push({...st.soldiers[9],id:'new-reinforcement',name:'Ny soldat',sleepPlace:11,driver:false,pc:false,excluded:false});
+  const updated=run(st);
+  assert.ok(updated.plan,updated.error);
+  assert.equal(JSON.stringify(updated.plan.nights[0]),completed);
+  assert.equal(updated.plan.nights.length,3);
+  assert.ok(updated.plan.nights[0].assignments.every(a=>a.personId!=='new-reinforcement'));
+});
