@@ -434,8 +434,8 @@
       const driverBadPenalty = 0; // Förare får skitpass om sex timmars sammanhängande vila uppfylls.
       const goodPenalty = good * quality.good * 230;
       // Den som haft tung föregående natt ska först kompenseras med bra pass.
-      const recoveryPenalty = bad * (quality.lastHeavy ? 600000 : quality.lastBad ? 180000 : 0)
-        - good * ((quality.credit||0)*60000 + (quality.lastHeavy?600000:0));
+      const recoveryPenalty = bad * (quality.lastHeavy ? 6000000 : quality.lastBad ? 600000 : 0)
+        - good * ((quality.credit||0)*250000 + (quality.lastHeavy?6000000:0));
       const score = hist * .28 + (historyRest.get(person.id) || 0) * .45 + minutes * .22 + clusters * 20 + burden * .23 + rotation * .8 + tie * 90 + shortRestPenalty + dutyBalancePenalty + interruptedPenalty + badPenalty + goodPenalty + lateDriver + driverBadPenalty + recoveryPenalty;
       if (!best || score < best.score) best = { person, proposed, score };
     }
