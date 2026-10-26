@@ -494,17 +494,22 @@
         const mean=total/Math.max(1,daily.length);
         nightBalancePenalty+=daily.reduce((a,b)=>a+(b-mean)**2,0)*18000;
       }
+      let goodCoveragePenalty=0;
+      for (const p of soldiers.filter(p=>!p.excluded)) {
+        const hasGood=nights.some(n=>n.assignments.some(a=>a.personId===p.id && shiftQuality(a,n.bounds).good));
+        if(!hasGood)goodCoveragePenalty+=50000000;
+      }
       let shortRestFairness=0;
       const counts=[];
       for(const daily of shortRestNights.values()) {
         const count=daily.filter(Boolean).length;
         counts.push(count);
         for(let i=1;i<daily.length;i++)
-          if(daily[i] && daily[i-1])shortRestFairness+=500000000;
+          if(daily[i] && daily[i-1])shortRestFairness+=5000000000;
       }
       const mean=counts.reduce((a,b)=>a+b,0)/Math.max(1,counts.length);
       shortRestFairness+=counts.reduce((a,b)=>a+(b-mean)**2,0)*100000000;
-      return values.reduce((a,b)=>a+(b-average)**2,0)*140000 + repeated + nightBalancePenalty + restPenalty + shortRestFairness + excessShifts;
+      return values.reduce((a,b)=>a+(b-average)**2,0)*140000 + repeated + nightBalancePenalty + restPenalty + shortRestFairness + goodCoveragePenalty + excessShifts;
     }
     let current=score();
     for(let pass=0;pass<18;pass++) {
@@ -879,6 +884,15 @@
       for(let i=1;i<p.perNight.length;i++) if(p.perNight[i]&&p.perNight[i-1]) score += 350000;
     }
     const underRestCounts = eligible.map(p => nights.filter(n => n.rest.some(r => r.personId === p.id && r.longestRest < REST_TARGET_MINUTES)).length);
+    // Fördela kortvilan över de aktiva soldaterna i stället för att belasta samma person.
+    const repeatShortRest = eligible.reduce((sum,p)=> {
+      const short=nights.map(n=>n.rest.some(r=>r.personId===p.id && r.longestRest<REST_TARGET_MINUTES));
+      return sum+short.slice(1).filter((v,i)=>v&&short[i]).length;
+    },0);
+    score += repeatShortRest * 10000000000000;
+    // Varje deltagare ska om möjligt få åtminstone ett bra pass under övningen.
+    // Låsta nätter ingår men får aldrig ändras.
+    score += qualityTotals.reduce((sum,q)=>sum+(q.good===0 ? 5000000000 : 0),0);
     const extraViolations = underRestCounts.reduce((sum,count) => sum + Math.max(0,count-1),0);
     const violations = underRestCounts.reduce((sum,count)=>sum+count,0);
     score += extraViolations * 1000000000000 + violations * 1000000000;
