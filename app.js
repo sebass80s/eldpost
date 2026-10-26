@@ -455,7 +455,7 @@
   }
 
   function balanceDifficultShifts(nights, soldiers, lockedNightCount = 0) {
-    const regular=soldiers.filter(p=>!p.driver && !p.excluded);
+    const regular=soldiers.filter(p=>!p.excluded);
     const byId=new Map(soldiers.map(p=>[p.id,p]));
     const allowed=(p,type)=>type==='fire'?canTakeFire(p):type==='patrol'?canTakePatrol(p):canTakeGuard(p);
     function score() {
@@ -474,7 +474,7 @@
             shortRestNights.get(p.id).push(rest<REST_TARGET_MINUTES);
             if(rest<REST_TARGET_MINUTES)restPenalty+=100000000+(REST_TARGET_MINUTES-rest)*2000;
           }
-          if(!p.driver) {
+          {
             const bad=shifts.filter(a=>shiftQuality(a,night.bounds).bad).length;
             badCounts.set(p.id,(badCounts.get(p.id)||0)+bad);
             badNights.get(p.id).push(bad);
@@ -521,7 +521,7 @@
         const typeLimit=type=>Math.max(2,Math.ceil((rows.filter(a=>a.type===type).length-soldiers.filter(p=>p.driver&&allowed(p,type)).length)/Math.max(1,regular.filter(p=>allowed(p,type)).length)));
         for(let i=0;i<rows.length;i++) {
           const a=rows[i],old=byId.get(a.personId);
-          if(!old || old.driver)continue;
+          if(!old || old.excluded)continue;
           for(const person of regular) {
             if(person.id===old.id || !allowed(person,a.type))continue;
             const target=rows.filter((x,j)=>j!==i && x.personId===person.id);
@@ -542,7 +542,7 @@
           const a=rows[i],b=rows[j];
           if(a.personId===b.personId)continue;
           const first=byId.get(a.personId),second=byId.get(b.personId);
-          if(!first || !second || first.driver || second.driver)continue;
+          if(!first || !second || first.excluded || second.excluded)continue;
           if(!allowed(first,b.type) || !allowed(second,a.type))continue;
           const firstOther=rows.filter((x,k)=>k!==i && k!==j && x.personId===first.id);
           const secondOther=rows.filter((x,k)=>k!==i && k!==j && x.personId===second.id);
