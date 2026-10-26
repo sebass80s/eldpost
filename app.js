@@ -389,7 +389,7 @@
     // Klassificera efter passets starttid, inte mittpunkt eller sluttid.
     const start = ((slot.start % 1440) + 1440) % 1440;
     const bad = start >= 120 && start < 300; // 02:00, 03:00, 04:00 (entimmespass)
-    const good = slot.start === bounds.start || slot.end === bounds.end;
+    const good = (slot.start >= bounds.start && slot.start < bounds.start + 2*(slot.end-slot.start)) || slot.end === bounds.end;
     return { bad, good };
   }
 
