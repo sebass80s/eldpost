@@ -558,8 +558,28 @@
           if(value<current-0.001 && (!best || value<best.value))best={a,b,first,second,value};
         }
       }
+      // Byt hela tjänstgöringsblock. En eldpost direkt följd av patrull
+      // kan annars inte flyttas som en enhet utan att bryta passordningen.
+      for(const night of nights.slice(lockedNightCount)) {
+        const rows=night.assignments;
+        for(let x=0;x<regular.length;x++)for(let y=x+1;y<regular.length;y++) {
+          const first=regular[x],second=regular[y];
+          const a=rows.filter(r=>r.personId===first.id),b=rows.filter(r=>r.personId===second.id);
+          if(!a.length && !b.length)continue;
+          if(!a.every(r=>allowed(second,r.type))||!b.every(r=>allowed(first,r.type)))continue;
+          const oldA=a.map(r=>r.personId),oldB=b.map(r=>r.personId);
+          a.forEach(r=>r.personId=second.id);
+          b.forEach(r=>r.personId=first.id);
+          const value=score();
+          a.forEach((r,i)=>r.personId=oldA[i]);
+          b.forEach((r,i)=>r.personId=oldB[i]);
+          if(value<current-0.001 && (!best || value<best.value))
+            best={blockA:a,blockB:b,first,second,value};
+        }
+      }
       if(!best)break;
-      if(best.b){best.a.personId=best.second.id;best.b.personId=best.first.id;}
+      if(best.blockA){best.blockA.forEach(r=>r.personId=best.second.id);best.blockB.forEach(r=>r.personId=best.first.id);}
+      else if(best.b){best.a.personId=best.second.id;best.b.personId=best.first.id;}
       else best.a.personId=best.person.id;
       current=best.value;
     }
