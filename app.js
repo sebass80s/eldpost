@@ -425,7 +425,7 @@
       const independent = state.settings.patrolEnabled && state.settings.patrolMode === 'independent';
       const nightlyLoad = busyMinutes(existing);
       const dutyBalancePenalty = independent ? (nightlyLoad > 0 ? 9000 + nightlyLoad * 12 : 0) + hist * 2.5 : 0;
-      const quality = qualityHistory.get(person.id) || {bad:0,good:0,lastBad:false};
+      const quality = qualityHistory.get(person.id) || {bad:0,good:0,lastBad:false,lastHeavy:false,credit:0};
       const bad = proposed.filter(p=>shiftQuality(p,bounds).bad).length;
       const good = proposed.filter(p=>shiftQuality(p,bounds).good).length;
       const finalPatrol = proposed.some(p => p.type === 'patrol' && p.end === makeWindow(state.settings.patrolStart, state.settings.patrolEnd, parseClock(state.settings.fireStart))?.end);
@@ -433,7 +433,10 @@
       const badPenalty = bad * (quality.bad * 650 + (quality.lastBad?1200:0) + (existing.some(p=>shiftQuality(p,bounds).bad)?850:0));
       const driverBadPenalty = 0; // Förare får skitpass om sex timmars sammanhängande vila uppfylls.
       const goodPenalty = good * quality.good * 230;
-      const score = hist * .28 + (historyRest.get(person.id) || 0) * .45 + minutes * .22 + clusters * 20 + burden * .23 + rotation * .8 + tie * 90 + shortRestPenalty + dutyBalancePenalty + interruptedPenalty + badPenalty + goodPenalty + lateDriver + driverBadPenalty;
+      // Den som haft tung föregående natt ska först kompenseras med bra pass.
+      const recoveryPenalty = bad * (quality.lastHeavy ? 600000 : quality.lastBad ? 180000 : 0)
+        - good * ((quality.credit||0)*60000 + (quality.lastHeavy?600000:0));
+      const score = hist * .28 + (historyRest.get(person.id) || 0) * .45 + minutes * .22 + clusters * 20 + burden * .23 + rotation * .8 + tie * 90 + shortRestPenalty + dutyBalancePenalty + interruptedPenalty + badPenalty + goodPenalty + lateDriver + driverBadPenalty + recoveryPenalty;
       if (!best || score < best.score) best = { person, proposed, score };
     }
     return best;
@@ -722,6 +725,8 @@
         const bad=duties.filter(d=>shiftQuality(d,previous.bounds).bad).length;
         quality.bad+=bad; quality.good+=duties.filter(d=>shiftQuality(d,previous.bounds).good).length;
         quality.lastBad=bad>0;
+        quality.lastHeavy=bad>=2;
+        quality.credit=Math.max(0,quality.credit + bad*2 + (bad>=2?3:0) - duties.filter(d=>shiftQuality(d,previous.bounds).good).length);
         historyMinutes.set(p.id,(historyMinutes.get(p.id)||0)+(rest?.busy||0));
         historyRest.set(p.id,(historyRest.get(p.id)||0)+(previous.bounds.end-previous.bounds.start-(rest?.longestRest||0)));
       }
@@ -798,6 +803,8 @@
         prior.bad += bad;
         prior.good += duties.filter(d=>shiftQuality(d,bounds).good).length;
         prior.lastBad = bad > 0;
+        prior.lastHeavy=bad>=2;
+        prior.credit=Math.max(0,prior.credit + bad*2 + (bad>=2?3:0) - duties.filter(d=>shiftQuality(d,bounds).good).length);
       }
       const needed=expectedDutySlots(s,nightIndex,fireWindow,patrolWindow,guardWindow);
       if (!fullyStaffed({assignments,bounds},needed,state.soldiers)) {
@@ -893,6 +900,11 @@
     // Varje deltagare ska om möjligt få åtminstone ett bra pass under övningen.
     // Låsta nätter ingår men får aldrig ändras.
     score += qualityTotals.reduce((sum,q)=>sum+(q.good===0 ? 5000000000 : 0),0);
+    // Nattlig återhämtning: dubbla skitpass en natt bör följas av bra pass nästa.
+    for(const p of eligible)for(let i=1;i<nights.length;i++) {
+      const previous=nights[i-1].assignments.filter(a=>a.personId===p.id && shiftQuality(a,nights[i-1].bounds).bad).length;
+      if(previous>=2 && !nights[i].assignments.some(a=>a.personId===p.id && shiftQuality(a,nights[i].bounds).good))score+=4000000000;
+    }
     const extraViolations = underRestCounts.reduce((sum,count) => sum + Math.max(0,count-1),0);
     const violations = underRestCounts.reduce((sum,count)=>sum+count,0);
     score += extraViolations * 1000000000000 + violations * 1000000000;
