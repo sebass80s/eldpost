@@ -190,3 +190,15 @@ test('rest deficits rotate across soldiers with three drivers over three nights'
     for(let i=1;i<values.length;i++)assert.notEqual(values[i],values[i-1]+1,
       'Consecutive sub-four-hour nights should be avoided when other soldiers are available');
 });
+
+test('first two and final shifts count as good for fairness',()=>{
+  const source=fs.readFileSync(path.join(__dirname,'..','app.js'),'utf8');
+  const start=source.indexOf('function shiftQuality(slot, bounds) {');
+  const end=source.indexOf('\n  function chooseCandidate',start);
+  assert.ok(start>=0 && end>start);
+  const shiftQuality=vm.runInNewContext('('+source.slice(start,end).trim()+')');
+  const bounds={start:1320,end:1800};
+  const starts=[1320,1380,1440,1500,1560,1620,1680,1740];
+  const good=starts.map(start=>shiftQuality({start,end:start+60},bounds).good);
+  assert.deepEqual(Array.from(good),[true,true,false,false,false,false,false,true]);
+});
