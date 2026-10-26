@@ -1138,13 +1138,15 @@
   }
 
   function changeStaffingMidExercise() {
-    const count=state.generated?.nights?.length||0;
+    const count=state.settings.nightCount===0 ? state.generated?.nights?.length||0 : Math.max(state.generated?.nights?.length||0,state.settings.nightCount||0);
     if(count<2) { alert('Generera ett schema med minst två nätter först.'); return; }
     const answer=prompt(`Hur många nätter är GENOMFÖRDA? (1–${count-1})\\nDe låses och sparas. Bara kommande nätter räknas om.`,String(state.lockedNights||1));
     if(answer===null)return;
     if(!/^\\d+$/.test(answer.trim()) || Number(answer)<1 || Number(answer)>=count) {
       alert(`Ange ett heltal mellan 1 och ${count-1}.`);return;
     }
+    if(state.lockedNights && Number(answer)<state.lockedNights) { alert('Redan låsta nätter kan inte låsas upp här.'); return; }
+    if(Number(answer)>state.generated.nights.length) { alert('Natten behöver först finnas i det genererade schemat.'); return; }
     state.lockedNights=Number(answer);
     state.generated.nights=state.generated.nights.slice(0,state.lockedNights);
     state.generated.settings.nightCount=state.settings.nightCount;
