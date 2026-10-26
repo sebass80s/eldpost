@@ -176,3 +176,17 @@ test('mid-exercise newcomer starts with no historical duty while prior nights st
   assert.equal(updated.plan.nights.length,3);
   assert.ok(updated.plan.nights[0].assignments.every(a=>a.personId!=='new-reinforcement'));
 });
+
+test('rest deficits rotate across soldiers with three drivers over three nights',()=>{
+  const st=state({size:10,nights:3,patrolPeople:1});
+  st.soldiers[3].driver=true;
+  const {plan,error}=run(st);
+  assert.ok(plan,error);
+  assertSafe(plan,st);
+  const shortNights=new Map(st.soldiers.map(p=>[p.id,[]]));
+  for(const [i,night] of plan.nights.entries())
+    for(const rest of night.rest)if(rest.longestRest<240)shortNights.get(rest.personId)?.push(i);
+  for(const values of shortNights.values())
+    for(let i=1;i<values.length;i++)assert.notEqual(values[i],values[i-1]+1,
+      'Consecutive sub-four-hour nights should be avoided when other soldiers are available');
+});
