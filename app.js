@@ -354,20 +354,14 @@
   }
 
   function patrolOrderValid(shifts) {
-    if (understaffedMode()) return shifts.length<=2 && !shifts.some((a,i)=>shifts.some((b,j)=>j>i&&overlaps(a,b)));
-    // Normalfall: ett sammanhängande block, antingen ett pass eller
-    // eldpost direkt följt av patrull. Aldrig två pass av samma slag.
-    // Vaktpostupplägg hanteras separat.
-    if (state.settings.guardEnabled) {
-      const fires=shifts.filter(a=>a.type==='fire');
-      const patrols=shifts.filter(a=>a.type==='patrol');
-      return !fires.length || !patrols.length || Math.max(...fires.map(a=>a.end))<=Math.min(...patrols.map(a=>a.start));
-    }
-    if (shifts.length > 2) return false;
-    if (shifts.filter(a=>a.type==='fire').length > 1 || shifts.filter(a=>a.type==='patrol').length > 1) return false;
-    if (shifts.length < 2) return true;
-    const [first,second]=[...shifts].sort((a,b)=>a.start-b.start);
-    return first.type==='fire' && second.type==='patrol' && first.end===second.start;
+    const ordered=[...shifts].sort((a,b)=>a.start-b.start);
+    if (understaffedMode()) return ordered.length<=2 && ordered.every((a,i)=>!i || ordered[i-1].end<=a.start);
+    // Normalbemanning: aldrig brutna turer. Alla pass under natten
+    // måste bilda ett enda obrutet tjänstgöringsblock.
+    if (ordered.some((a,i)=>i>0 && ordered[i-1].end!==a.start)) return false;
+    if (!state.settings.guardEnabled && ordered.length>2) return false;
+    if (new Set(ordered.map(a=>a.type)).size !== ordered.length) return false;
+    return true; // Eldpost före patrull/vaktpost är en preferens, inte ett krav.
   }
 
     function overlaps(a, b) { return a.start < b.end && b.start < a.end; }
@@ -493,6 +487,11 @@
             repeated+=Math.max(0,bad-1)*60000;
           }
         }
+      }
+      // Föredra eldpost före patrull/vaktpost utan att förbjuda omvänd ordning.
+      for(const night of nights.slice(lockedNightCount))for(const p of regular) {
+        const shifts=night.assignments.filter(a=>a.personId===p.id).sort((a,b)=>a.start-b.start);
+        if(shifts.length>1 && shifts[0].type!=='fire' && shifts.some(a=>a.type==='fire')) repeated+=250000;
       }
       const values=regular.map(p=>badCounts.get(p.id)||0);
       const average=values.reduce((a,b)=>a+b,0)/Math.max(1,values.length);
