@@ -187,7 +187,14 @@
     for (const soldier of state.soldiers) if (!soldier.sleepPlace) soldier.sleepPlace = free.shift();
   }
 
+  function updateUnderstaffedWarning() {
+    const count=state.soldiers.filter(p=>!p.excluded).length;
+    const warning=$('understaffedWarning');
+    if(warning) warning.classList.toggle('hidden',count>=9);
+  }
+
   function renderSoldiers() {
+    updateUnderstaffedWarning();
     els.soldierList.innerHTML = '';
     state.soldiers.forEach(soldier => {
       const node = els.soldierTemplate.content.firstElementChild.cloneNode(true);
