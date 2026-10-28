@@ -270,11 +270,12 @@
     return `M ${o1.x} ${o1.y} A ${outerR} ${outerR} 0 ${large} 1 ${o2.x} ${o2.y} L ${i2.x} ${i2.y} A ${innerR} ${innerR} 0 ${large} 0 ${i1.x} ${i1.y} Z`;
   }
 
+  function understaffedMode() { return state.soldiers.filter(p=>!p.excluded).length < 9; }
   function canTakeDuty(person, duty) {
     if (person.excluded) return false;
     const type = duty === 'fire' ? 'Fire' : 'Patrol';
-    if (person.pc && !state.settings[`allowPc${type}`]) return false;
-    if (person.stf && !state.settings[`allowStf${type}`]) return false;
+    if (person.pc && !state.settings[`allowPc${type}`] && !(understaffedMode() && duty==='patrol')) return false;
+    if (person.stf && !state.settings[`allowStf${type}`] && !(understaffedMode() && duty==='patrol')) return false;
     return true;
   }
   function canTakeFire(person) { return canTakeDuty(person, 'fire'); }
@@ -346,6 +347,7 @@
   }
 
   function patrolOrderValid(shifts) {
+    if (understaffedMode()) return shifts.length<=2 && !shifts.some((a,i)=>shifts.some((b,j)=>j>i&&overlaps(a,b)));
     // Normalfall: ett sammanhängande block, antingen ett pass eller
     // eldpost direkt följt av patrull. Aldrig två pass av samma slag.
     // Vaktpostupplägg hanteras separat.
@@ -401,9 +403,9 @@
       const existing = assignmentsByPerson.get(person.id) || [];
       const combined = [...existing, ...proposed];
       // Hård gräns: högst ett pass av varje typ och högst två totalt.
-      if (combined.length > 2 || combined.filter(x=>x.type==='fire').length > 1 ||
+      if (combined.length > 2 || (!understaffedMode() && (combined.filter(x=>x.type==='fire').length > 1 ||
           combined.filter(x=>x.type==='patrol').length > 1 ||
-          combined.filter(x=>x.type==='guard').length > 1) continue;
+          combined.filter(x=>x.type==='guard').length > 1))) continue;
       // Avbruten sömn tillåts endast som sista utväg när vaktpost är aktiv.
       const ordered = [...combined].sort((a,b)=>a.start-b.start);
       const interrupted = ordered.length === 2 && ordered[0].end !== ordered[1].start;
@@ -631,12 +633,12 @@
     if (!state.settings.guardEnabled && totalDemand > soldiers.filter(p=>canTakeFire(p)||canTakePatrol(p)).length*2) return null;
     // Skip strict search when two assignments per eligible person cannot cover demand.
     if(strictTwo && totalDemand>soldiers.filter(p=>poolByType.fire.includes(p)||poolByType.patrol.includes(p)||poolByType.guard.includes(p)).length*2) return null;
-    const maxShifts=strictTwo ? 2 : Math.max(3,Math.ceil((totalDemand-drivers)/Math.max(1,nonDrivers)));
+    const maxShifts=understaffedMode() ? 2 : strictTwo ? 2 : Math.max(3,Math.ceil((totalDemand-drivers)/Math.max(1,nonDrivers)));
     const maxByType=Object.fromEntries(['fire','patrol','guard'].map(type=>{
       const pool=poolByType[type],normal=pool.filter(p=>!p.driver).length;
       const eligibleDrivers=pool.filter(p=>p.driver).length;
       const demand=jobs.filter(j=>j.type===type).reduce((sum,j)=>sum+j.people,0);
-      return [type,strictTwo ? 1 : Math.max(2,Math.ceil((demand-eligibleDrivers)/Math.max(1,normal)))];
+      return [type,understaffedMode() ? 2 : strictTwo ? 1 : Math.max(2,Math.ceil((demand-eligibleDrivers)/Math.max(1,normal)))];
     }));
     const assigned=new Map(soldiers.map(p=>[p.id,[]]));
     const rows=[];
@@ -656,7 +658,7 @@
         // Reservsökningen får aldrig stapla obegränsat många pass på en soldat.
         // Tre behövs i belastade nattupplägg med fler personpass än två per person.
         if(existing.length >= (state.settings.guardEnabled ? maxShifts : 2)) return false;
-        if(existing.filter(a=>a.type===job.type).length >= (state.settings.guardEnabled ? maxByType[job.type] : 1)) return false;
+        if(existing.filter(a=>a.type===job.type).length >= (state.settings.guardEnabled || understaffedMode() ? maxByType[job.type] : 1)) return false;
         if(existing.some(a=>overlaps(a,job)))return false;
         if(!patrolOrderValid([...existing,job]))return false;
         return !p.driver || maxRestGap(bounds,[...existing,job])>=DRIVER_REST_MINUTES;
@@ -706,6 +708,7 @@
     els.generateMessage.textContent = '';
 
     const s = state.settings;
+    const lowStaffWarning = understaffedMode() ? 'VARNING: Färre än 9 aktiva soldater. Undantag från ordinarie passregler kan krävas. Förare ska fortfarande få minst 6 timmars sammanhängande vila. ' : '';
     searchLimitReached=false;
     const historical = state.lockedNights > 0 && state.generated?.nights
       ? state.generated.nights.slice(0,state.lockedNights)
@@ -722,7 +725,7 @@
     };
     const eligible = state.soldiers.filter(p => canTakeFire(p) || canTakePatrol(p) || canTakeGuard(p));
     if (!s.guardEnabled && s.patrolEnabled && Array.from({length:targetNightCount-historical.length},(_,i)=>i+historical.length).some(i=>dutyEnabledOnNight(s,'patrol',i) && makeSlots(fireWindow,s.fireDuration,'fire').length+makeSlots(patrolWindow,s.patrolDuration,'patrol').length*s.patrolPeople>eligible.length*2)) {
-      els.generateMessage.textContent=IMPOSSIBLE_MESSAGE;
+      els.generateMessage.textContent=lowStaffWarning+IMPOSSIBLE_MESSAGE;
       return;
     }
     const fireEligible = state.soldiers.filter(canTakeFire);
@@ -934,7 +937,7 @@
     if (!bestPlan) {
       state.generated = null;
       els.resultSection.classList.add('hidden');
-      els.generateMessage.textContent = searchLimitReached ? SEARCH_LIMIT_MESSAGE : IMPOSSIBLE_MESSAGE;
+      els.generateMessage.textContent = lowStaffWarning+(searchLimitReached ? SEARCH_LIMIT_MESSAGE : IMPOSSIBLE_MESSAGE);
       saveStateSoon();
       return;
     }
