@@ -510,6 +510,18 @@
         const hasGood=nights.some(n=>n.assignments.some(a=>a.personId===p.id && shiftQuality(a,n.bounds).good));
         if(!hasGood)goodCoveragePenalty+=50000000;
       }
+      // Återhämtning nästa natt: skitpass föregående natt ska följas av
+      // minst ett bra pass om schemat kan omfördelas utan hårda regelbrott.
+      let recoveryPenalty=0;
+      for(const p of regular) for(let i=1;i<nights.length;i++) {
+        if(i<=lockedNightCount-1) continue;
+        const previous=nights[i-1].assignments.filter(a=>a.personId===p.id && shiftQuality(a,nights[i-1].bounds).bad).length;
+        if(!previous)continue;
+        const nextGood=nights[i].assignments.filter(a=>a.personId===p.id && shiftQuality(a,nights[i].bounds).good).length;
+        const nextBad=nights[i].assignments.filter(a=>a.personId===p.id && shiftQuality(a,nights[i].bounds).bad).length;
+        if(!nextGood)recoveryPenalty+=(previous===1?300000000:1200000000);
+        recoveryPenalty+=previous*nextBad*400000000;
+      }
       let shortRestFairness=0;
       const counts=[];
       for(const daily of shortRestNights.values()) {
@@ -520,7 +532,7 @@
       }
       const mean=counts.reduce((a,b)=>a+b,0)/Math.max(1,counts.length);
       shortRestFairness+=counts.reduce((a,b)=>a+(b-mean)**2,0)*100000000;
-      return values.reduce((a,b)=>a+(b-average)**2,0)*140000 + repeated + nightBalancePenalty + restPenalty + shortRestFairness + goodCoveragePenalty + excessShifts;
+      return values.reduce((a,b)=>a+(b-average)**2,0)*140000 + repeated + nightBalancePenalty + restPenalty + shortRestFairness + goodCoveragePenalty + recoveryPenalty + excessShifts;
     }
     let current=score();
     for(let pass=0;pass<18;pass++) {
@@ -932,7 +944,7 @@
     // Nattlig återhämtning: dubbla skitpass en natt bör följas av bra pass nästa.
     for(const p of eligible)for(let i=1;i<nights.length;i++) {
       const previous=nights[i-1].assignments.filter(a=>a.personId===p.id && shiftQuality(a,nights[i-1].bounds).bad).length;
-      if(previous>=2 && !nights[i].assignments.some(a=>a.personId===p.id && shiftQuality(a,nights[i].bounds).good))score+=4000000000;
+      if(previous>=1 && !nights[i].assignments.some(a=>a.personId===p.id && shiftQuality(a,nights[i].bounds).good))score+=previous>=2?4000000000:650000000;
     }
     const extraViolations = underRestCounts.reduce((sum,count) => sum + Math.max(0,count-1),0);
     const violations = underRestCounts.reduce((sum,count)=>sum+count,0);
